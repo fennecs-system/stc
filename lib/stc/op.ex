@@ -10,6 +10,12 @@ defmodule STC.Op do
     defstruct [:task_id, :module, :payload, :cluster_affinity, :space_affinity, :agent_affinity]
   end
 
+  # for reversing a Run op
+  defmodule Clean do
+    @moduledoc false
+    defstruct [:task_id, :module, :payload, :cluster_affinity, :space_affinity, :agent_affinity]
+  end
+
   # for scheduling purposes
   defmodule Pause do
     @moduledoc false
@@ -50,4 +56,5 @@ defmodule STC.Op do
     @moduledoc false
     defstruct [:event, :continuation]
   end
+
 end
