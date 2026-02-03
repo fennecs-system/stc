@@ -14,13 +14,14 @@ defmodule STC.Interpreter.Distributed do
 
   defp walk_program({:pure, a}, _completed), do: {:pure, a}
 
-  defp walk_program({:free, %Op.Run{task_id: id, module: mod, payload: p}, cont_fn}, completed) do
-    if Map.has_key?(completed, id) do
-      result = Map.get(completed, id)
-      walk_program(cont_fn.(result), completed)
-    else
-      {:free, %Op.Run{task_id: id, module: mod, payload: p}, cont_fn}
-    end
+  defp walk_program({:free, %Op.Run{task_id: id, module: mod, payload: p}, cont_fn}, completed)
+       when is_map_key(completed, id) do
+    result = Map.get(completed, id)
+    walk_program(cont_fn.(result), completed)
+  end
+
+  defp walk_program({:free, %Op.Run{task_id: id, module: mod, payload: p}, cont_fn}, _completed) do
+    {:free, %Op.Run{task_id: id, module: mod, payload: p}, cont_fn}
   end
 
   defp walk_program({:free, %Op.Parallel{programs: programs}, cont_fn}, completed) do
