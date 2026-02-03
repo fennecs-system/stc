@@ -55,11 +55,15 @@ defmodule STC.Scheduler.Executor do
         {:noreply, state}
 
       {:error, reason} ->
-        should_retry =
+        should_retry? =
           STC.Task.retriable?(state.task_spec.module, reason) &&
             state.attempt < state.max_attempts
 
-        if should_retry do
+        # try cleanup
+        # cleanup probably needs to be an event too?
+        STC.Task.clean(state.task_spec.module, state.task_spec, context)
+
+        if should_retry? do
           backoff = state.task_spec.retry_policy.backoff_ms
           Process.send_after(self(), :execute, backoff)
           {:noreply, Map.put(state, :attempt, state.attempt + 1)}

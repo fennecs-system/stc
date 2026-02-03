@@ -1,15 +1,4 @@
-defmodule STC.Scheduler do
-  @moduledoc """
-  A generic scheduler for STC tasks
-  """
-  use GenServer
-  require Logger
-  alias STC.Event.Store
-  alias STC.Scheduler.Executor
-  alias STC.Spec
-  # alias STC.Scheduler.Algorithm
-  alias STC.ReplyBuffer
-
+defmodule STC.Scheduler.State do
   defstruct [
     :id,
     # what level does this scheduler operate at? local? space? cluster?
@@ -28,6 +17,34 @@ defmodule STC.Scheduler do
     :reply_buffer
   ]
 
+  @type t :: %__MODULE__{
+          id: String.t(),
+          level: atom(),
+          agent_pool: list(),
+          stale_agent_pool: list(),
+          algorithm: module(),
+          agent_tasks: map(),
+          task_locks: map(),
+          active_tasks: map(),
+          event_loop_ref: reference() | nil,
+          reply_buffer: pid()
+        }
+end
+
+defmodule STC.Scheduler do
+  @moduledoc """
+  A generic scheduler for STC tasks
+  """
+  use GenServer
+  require Logger
+  alias STC.Event.Store
+  alias STC.Scheduler.Executor
+  alias STC.Spec
+  # alias STC.Scheduler.Algorithm
+  alias STC.ReplyBuffer
+
+  alias STC.Scheduler.State
+
   def via(id) do
     {:via, Horde.Registry, {STC.SchedulerRegistry, "scheduler_#{id}"}}
   end
@@ -44,7 +61,7 @@ defmodule STC.Scheduler do
 
     {:ok, pid} = ReplyBuffer.start_link(scheduler_id: id)
 
-    state = %__MODULE__{
+    state = %State{
       id: id,
       level: Keyword.get(opts, :level),
       agent_pool: [],
@@ -60,7 +77,7 @@ defmodule STC.Scheduler do
     {:ok, schedule_event_loop(state)}
   end
 
-  def handle_info(:event_loop, state) do
+  def handle_info(:event_loop, %State{} = state) do
     state =
       state
       |> refresh_agent_pool()
@@ -91,13 +108,13 @@ defmodule STC.Scheduler do
     {:noreply, schedule_event_loop(state)}
   end
 
-  def schedule_event_loop(state) do
+  def schedule_event_loop(%State{} = state) do
     if not is_nil(state.event_loop_ref), do: Process.cancel_timer(state.event_loop_ref)
     ref = Process.send_after(self(), :event_loop, 1000)
     %{state | event_loop_ref: ref}
   end
 
-  def schedule_task(event, state) do
+  def schedule_task(event, %State{} = state) do
     with {:ok, state} <- try_acquire_lock(event.task_id, state),
          {:ok, agents} <- select_agents_for_event(event, state),
          {:ok, state} <- spawn_executor(event, agents, state) do
