@@ -29,7 +29,7 @@ defmodule Stc.MixProject do
 
       # dev
       {:credo, "~> 1.7.7", only: [:dev, :test, :sandbox], runtime: false},
-      {:dialyxir, "~> 1.4", only: [:dev, :test, :sandbox], runtime: false},
+      {:dialyxir, "~> 1.4", only: [:dev, :test, :sandbox], runtime: false}
     ]
   end
 end

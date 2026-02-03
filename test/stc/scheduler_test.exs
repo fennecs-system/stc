@@ -1,5 +1,5 @@
-defmodule STCTest do
-  use DataCase, async: false
+defmodule STC.SchedulerTest do
+  use ExUnit.Case
 
   alias STC.Scheduler
   alias STC.Scheduler.Algorithm.LocalTestAlgorithm
@@ -101,7 +101,7 @@ defmodule STCTest do
     {:ok, _scheduler} =
       Scheduler.start_link(
         algorithm: LocalTestAlgorithm,
-        id: "test_scheduler_1",
+        id: "test_scheduler_2",
         level: :local
       )
 
@@ -112,7 +112,7 @@ defmodule STCTest do
         Program.run(TestAddTask, %{a: num, b: 1})
       end)
 
-    Interpreter.distributed(program, %{workflow_id: "infinite_workflow_1"})
+    Interpreter.distributed(program, %{workflow_id: "infinite_workflow_2"})
     Process.sleep(10_000)
   end
 end

@@ -33,7 +33,6 @@ defmodule STC.ReplyBuffer do
   end
 
   def via(scheduler_id) do
-    {:via, Horde.Registry,
-     {STC.SchedulerRegistry, "scheduler_reply_buffer_#{scheduler_id}"}}
+    {:via, Horde.Registry, {STC.SchedulerRegistry, "scheduler_reply_buffer_#{scheduler_id}"}}
   end
 end

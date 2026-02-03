@@ -1,5 +1,5 @@
-defmodule STCTest do
-  use DataCase, async: false
+defmodule STC.ProgramTest do
+  use ExUnit.Case
 
   alias STC.Interpreter
   alias STC.Event.Store
