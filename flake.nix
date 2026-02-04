@@ -27,5 +27,17 @@
           erlang
         ];
       };
+
+      devShell.devShell.x86_64-linux = pkgs.mkShell {
+        MIX_HOME = ".cache/mix";
+        HEX_HOME = ".cache/hex";
+        ERL_AFLAGS = "-kernel shell_history enabled";
+         
+        packages = [
+          elixir
+          erlang
+        ];
+      };
+    
     };
 }
