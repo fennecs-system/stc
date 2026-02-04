@@ -39,5 +39,4 @@ defmodule STC.Program.Store do
   def handle_call({:get, key}, _from, state) when is_map_key(state, key) do
     {:reply, {:error, nil}, state}
   end
-
 end

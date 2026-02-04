@@ -20,22 +20,28 @@ defmodule STC.ProgramTest do
         Program.run(TestAddTask, %{a: 1, b: 1}, :add1),
         Program.run(TestAddTask, %{a: 1, b: 1}, :add2)
       ])
-      |> bind(fn results ->
-        [r1, r2] = results
+      |> bind(fn
+        [2, 2] ->
+          Program.run(
+            TestAddTask,
+            %{a: 2, b: 2 + 10},
+            :add_3
+          )
 
-        Program.run(
-          TestAddTask,
-          %{a: r1, b: r2 + 1},
-          :add_3
-        )
+        [r1, r2] ->
+          Program.run(
+            TestAddTask,
+            %{a: r1, b: r2 + 1},
+            :add_3
+          )
       end)
 
     # cant print the result of the bind
     Interpreter.trace(program)
-    assert {:ok, 5} == Interpreter.local(program, %{})
+    assert {:ok, 14} == Interpreter.local(program, %{})
 
     # check that events were logged
     # |> IO.inspect(label: "Event Store State")
-    _state = :sys.get_state(event_store)
+    _state = :sys.get_state(event_store) |> dbg()
   end
 end
