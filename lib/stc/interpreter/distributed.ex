@@ -43,7 +43,7 @@ defmodule STC.Interpreter.Distributed do
         } = event,
         state
       ) do
-    program = ProgramStore.get(wf_id) |> dbg()
+    {:ok, program} = ProgramStore.get(wf_id) |> dbg()
 
     {next_program, ready_tasks} =
       next(program, task_id, result, wf_id)

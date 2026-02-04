@@ -24,13 +24,20 @@ defmodule STC.Program.Store do
 
   @impl true
   def handle_call({:put, key, value}, _from, state) do
-    new_state = Map.put(state, key, value) |> dbg()
+    binary = :erlang.term_to_binary(value)
+    new_state = Map.put(state, key, binary) |> dbg()
     {:reply, :ok, new_state}
   end
 
   @impl true
-  def handle_call({:get, key}, _from, state) do
-    value = Map.get(state, key)
-    {:reply, value, state}
+  def handle_call({:get, key}, _from, state) when is_map_key(state, key) do
+    binary = Map.get(state, key)
+    value = :erlang.binary_to_term(binary)
+    {:reply, {:ok, value}, state}
   end
+
+  def handle_call({:get, key}, _from, state) when is_map_key(state, key) do
+    {:reply, {:error, nil}, state}
+  end
+
 end
