@@ -24,7 +24,7 @@ defmodule STC.Program.Store do
 
   @impl true
   def handle_call({:put, key, value}, _from, state) do
-    new_state = Map.put(state, key, value)
+    new_state = Map.put(state, key, value) |> dbg()
     {:reply, :ok, new_state}
   end
 

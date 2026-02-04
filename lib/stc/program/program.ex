@@ -11,7 +11,7 @@ defmodule STC.Program do
   def run(module, payload, nil, opts) do
     {:free,
      %Op.Run{
-       task_id: Ecto.UUID.generate(),
+       task_id: Ecto.UUID.generate() |> dbg(),
        module: module,
        payload: payload,
        # map opts to fields

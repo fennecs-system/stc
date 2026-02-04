@@ -16,7 +16,7 @@ defmodule STC.SchedulerTest do
 
   alias STC.Task.TestAddTask
 
-  test "can start a scheduler" do
+  setup do
     {:ok, sched_reg_pid} =
       Horde.Registry.start_link(
         name: STC.SchedulerRegistry,
@@ -33,21 +33,21 @@ defmodule STC.SchedulerTest do
 
     {:ok, event_store_pid} = Store.start_link([])
 
-    Process.sleep(1_000)
-
     # spawn a horde registry for schedulers
     # currently needs to spawn after event store
     {:ok, interp_pid} = Distributed.start_link([])
     {:ok, prog_store_pid} = ProgramStore.start_link([])
 
+    %{executor_registry: exe_reg_pid, scheduler_registry: sched_reg_pid}
+  end
+
+  test "can start a scheduler", %{scheduler_registry: _pid} do
     {:ok, _scheduler} =
       Scheduler.start_link(
         algorithm: LocalTestAlgorithm,
         id: "test_scheduler_1",
         level: :local
       )
-
-    Process.sleep(1_000)
 
     program =
       Program.parallel([
@@ -74,38 +74,14 @@ defmodule STC.SchedulerTest do
     # terminate all pids
   end
 
-  test "keeps running an infinite job" do
-    {:ok, sched_reg_pid} =
-      Horde.Registry.start_link(
-        name: STC.SchedulerRegistry,
-        keys: :unique,
-        members: :auto
-      )
-
-    {:ok, exe_reg_pid} =
-      Horde.Registry.start_link(
-        name: STC.ExecutorRegistry,
-        keys: :unique,
-        members: :auto
-      )
-
-    {:ok, event_store_pid} = Store.start_link([])
-
-    Process.sleep(1_000)
-
-    # spawn a horde registry for schedulers
-    # currently needs to spawn after event store
-    {:ok, interp_pid} = Distributed.start_link([])
-    {:ok, prog_store_pid} = ProgramStore.start_link([])
-
+  test "keeps running an infinite job", %{scheduler_registry: _pid} do
     {:ok, _scheduler} =
       Scheduler.start_link(
         algorithm: LocalTestAlgorithm,
         id: "test_scheduler_2",
         level: :local
       )
-
-    Process.sleep(1_000)
+      |> dbg()
 
     program =
       cycle(1, fn num ->

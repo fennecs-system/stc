@@ -110,7 +110,7 @@ defmodule STC.Scheduler do
 
   def schedule_event_loop(%State{} = state) do
     if not is_nil(state.event_loop_ref), do: Process.cancel_timer(state.event_loop_ref)
-    ref = Process.send_after(self(), :event_loop, 1000)
+    ref = Process.send_after(self(), :event_loop, :timer.seconds(1))
     %{state | event_loop_ref: ref}
   end
 
