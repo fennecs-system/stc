@@ -27,9 +27,9 @@ defmodule STC.Event.Store do
     GenServer.call(__MODULE__, {:subscribe, pid}, 10_000)
   end
 
-  def find_ready_events() do
+  def filter_events(event_type) do
     # find all ready events to be scheduled
-    GenServer.call(__MODULE__, :find_ready_events)
+    GenServer.call(__MODULE__, {:filter_events, event_type})
   end
 
   def get_events(filters) do
@@ -48,10 +48,10 @@ defmodule STC.Event.Store do
     {:reply, :ok, new_state}
   end
 
-  def handle_call(:find_ready_events, _from, state) do
+  def handle_call({:filter_events, event_type}, _from, state) do
     events =
       Map.get(state, :events, [])
-      |> Enum.filter(fn event -> is_struct(event, STC.Event.Ready) end)
+      |> Enum.filter(fn event -> is_struct(event, event_type) end)
 
     # filter events that have already been scheduled - so events that dont have a lock yet
     events =

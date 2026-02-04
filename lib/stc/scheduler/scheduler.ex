@@ -89,11 +89,11 @@ defmodule STC.Scheduler do
 
     # resume_events = poll_resume_events(state)
 
-    # stop_events = poll_stop_events(state)
+    completed_events = poll_completed_events(state)
 
     # events = ready_events ++ pause_events ++ resume_events ++ stop_events
 
-    events = ready_events
+    events = ready_events ++ completed_events
 
     events = schedule_event_order(events, state)
 
@@ -114,7 +114,8 @@ defmodule STC.Scheduler do
     %{state | event_loop_ref: ref}
   end
 
-  def schedule_task(event, %State{} = state) do
+  # ready events get scheduled
+  def schedule_task(%STC.Event.Ready{} = event, %State{} = state) do
     with {:ok, state} <- try_acquire_lock(event.task_id, state),
          {:ok, agents} <- select_agents_for_event(event, state),
          {:ok, state} <- spawn_executor(event, agents, state) do
@@ -129,6 +130,10 @@ defmodule STC.Scheduler do
       {:error, _reason} ->
         state
     end
+  end
+
+  def schedule_task(_, %State{} = state) do
+    state
   end
 
   def try_acquire_lock(task_id, state) do
@@ -211,9 +216,12 @@ defmodule STC.Scheduler do
 
   def poll_ready_events(_state) do
     # poll event store for tasks ready to be scheduled
+    events = Store.filter_events(STC.Event.Ready)
+    events
+  end
 
-    events = Store.find_ready_events()
-    # Logger.info("Schedueler found #{length(events)} ready events: #{inspect(events)}")
+  def poll_completed_events(_state) do
+    events = Store.filter_events(STC.Event.Completed)
     events
   end
 
