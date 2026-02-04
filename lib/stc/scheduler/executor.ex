@@ -15,7 +15,9 @@ defmodule STC.Scheduler.Executor do
     :module,
     :attempt,
     :cluster_id,
-    :space_id
+    :space_id,
+    # store a reference to the pid
+    :reply_buffer
   ]
 
   def via(task_id) do
@@ -42,15 +44,18 @@ defmodule STC.Scheduler.Executor do
       task_spec: state.task_spec,
       attempt: state.attempt,
       cluster_id: state.cluster_id,
-      space_id: state.space_id
+      space_id: state.space_id,
+      reply_buffer: state.reply_buffer
     }
 
     case state.task_spec.module.execute(state.task_spec, context) do
       {:ok, result} ->
+        # for tasks that complete immediately
         emit_completion(state, result)
         {:stop, :normal, state}
 
       {:started, handle} ->
+        # for async tasks
         emit_started(state, handle)
         {:noreply, state}
 
@@ -61,7 +66,7 @@ defmodule STC.Scheduler.Executor do
 
         # try cleanup
         # cleanup probably needs to be an event too?
-        STC.Task.clean(state.task_spec.module, state.task_spec, context)
+        state.task_spec.module.clean(state.task_spec, context)
 
         if should_retry? do
           backoff = state.task_spec.retry_policy.backoff_ms

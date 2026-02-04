@@ -5,7 +5,7 @@ defmodule STC.ProgramTest do
   alias STC.Event.Store
   alias STC.Program
 
-  alias STC.Tasks.TestAddTask
+  alias STC.Task.TestAddTask
 
   import STC.Free
 

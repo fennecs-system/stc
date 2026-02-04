@@ -56,5 +56,4 @@ defmodule STC.Op do
     @moduledoc false
     defstruct [:event, :continuation]
   end
-
 end

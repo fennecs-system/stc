@@ -135,7 +135,7 @@ defmodule STC.Interpreter do
   end
 
   defp interpret_distributed(
-         {:free, %Op.Sequence{programs: [program | _]}, cont_fn},
+         {:free, %Op.Sequence{programs: [program | _]}, _cont_fn},
          context
        ) do
     # emit a ready task for the first program in the sequence
@@ -143,7 +143,7 @@ defmodule STC.Interpreter do
   end
 
   defp interpret_distributed(
-         {:free, %Op.Sequence{programs: []}, cont_fn},
+         {:free, %Op.Sequence{programs: []}, _cont_fn},
          context
        ) do
     # nothing to do
@@ -151,7 +151,7 @@ defmodule STC.Interpreter do
   end
 
   defp interpret_distributed(
-         {:free, %Op.Parallel{programs: programs}, cont_fn},
+         {:free, %Op.Parallel{programs: programs}, _cont_fn},
          context
        ) do
     # Emit all tasks at once
