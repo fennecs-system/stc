@@ -77,6 +77,18 @@ defmodule STC.Scheduler do
     {:ok, schedule_event_loop(state)}
   end
 
+  @impl true
+  def handle_info(:recover, state) do
+    events = Store.get_events(scheduler_id: state.scheduler_id)
+
+    state =
+      state
+      |> recover_state_from_events(events)
+      |> recover_active_tasks()
+
+    {:noreply, schedule_event_loop(state)}
+  end
+
   def handle_info(:event_loop, %State{} = state) do
     state =
       state
@@ -105,6 +117,14 @@ defmodule STC.Scheduler do
 
     Logger.debug("Scheduler #{state.id} event loop completed.")
 
+    {:noreply, schedule_event_loop(state)}
+  rescue
+    err ->
+      Logger.error("Rescued error in scheduler #{state.id} event loop: #{Exception.format(:error, err, __STACKTRACE__)}")
+      {:noreply, schedule_event_loop(state)}
+  catch
+    kind, payload
+    Logger.error("Caught error in scheduler #{state.id} event loop: #{Exception.format(kind, payload, __STACKTRACE__)}")
     {:noreply, schedule_event_loop(state)}
   end
 
@@ -217,6 +237,7 @@ defmodule STC.Scheduler do
     events
   end
 
+
   def recover_state_from_events(state, _event) do
     state
   end
@@ -225,15 +246,5 @@ defmodule STC.Scheduler do
     state
   end
 
-  @impl true
-  def handle_info(:recover, state) do
-    events = Store.get_events(scheduler_id: state.scheduler_id)
 
-    state =
-      state
-      |> recover_state_from_events(events)
-      |> recover_active_tasks()
-
-    {:noreply, schedule_event_loop(state)}
-  end
 end

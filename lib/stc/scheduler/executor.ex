@@ -17,7 +17,11 @@ defmodule STC.Scheduler.Executor do
     :cluster_id,
     :space_id,
     # store a reference to the pid
-    :reply_buffer
+    :reply_buffer,
+
+    # tunable timeouts for async tasks
+    :startup_timeout_ref,
+    :task_timeout_ref,
   ]
 
   def via(task_id) do
@@ -56,6 +60,21 @@ defmodule STC.Scheduler.Executor do
 
       {:started, handle} ->
         # for async tasks
+        # spawn a timeout
+
+        startup_timeout_ref = if Map.has_key?(state.task_spec, :startup_timeout_ms) do
+          Process.send_after(self(), :startup_timeout, state.task_spec.startup_timeout_ms)
+        else
+          nil
+        end
+
+        task_timeout_ref = if Map.has_key?(state.task_spec, :timeout_ms) do
+          Process.send_after(self(), :task_timeout, state.task_spec.timeout_ms)
+        else
+          nil
+        end
+
+        state = %{state | startup_timeout_ref: startup_timeout_ref, task_timeout_ref: task_timeout_ref}
         emit_started(state, handle)
         {:noreply, state}
 
@@ -69,6 +88,7 @@ defmodule STC.Scheduler.Executor do
         state.task_spec.module.clean(state.task_spec, context)
 
         if should_retry? do
+          emit_failure(state, reason, true)
           backoff = state.task_spec.retry_policy.backoff_ms
           Process.send_after(self(), :execute, backoff)
           {:noreply, Map.put(state, :attempt, state.attempt + 1)}
@@ -79,8 +99,15 @@ defmodule STC.Scheduler.Executor do
     end
   end
 
+  def handle_info(:timeout, state) do
+    emit_failure(state, :timeout, true)
+    {:stop, :normal, state}
+  end
+
   def handle_info(%Event.Completed{task_id: task_id}, state)
       when task_id == state.task_id do
+    # cancel the timer
+    Process.cancel_timer(state.timeout_ref)
     {:stop, :normal, state}
   end
 
