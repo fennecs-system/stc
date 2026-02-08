@@ -82,22 +82,28 @@ defmodule STC.Scheduler do
       state
       |> refresh_agent_pool()
       |> reconcile_stale_agents()
+      |> process_agent_buffer()
 
     ready_events = poll_ready_events(state)
     # return events
     # pause_events = poll_pause_events(state)
 
+
+    # started events
+
     # resume_events = poll_resume_events(state)
 
     completed_events = poll_completed_events(state)
 
+    started_events = poll_started_events(state)
+
     # events = ready_events ++ pause_events ++ resume_events ++ stop_events
 
-    events = ready_events ++ completed_events
+    events = ready_events ++ completed_events ++ started_events
 
     events = schedule_event_order(events, state)
 
-    _ =
+    state =
       Enum.reduce(events, state, fn event, acc ->
         # Logger.info("scheduling task #{event.task_id} in scheduler #{state.id}")
         schedule_task(event, acc)
@@ -132,6 +138,17 @@ defmodule STC.Scheduler do
     end
   end
 
+  # completed events can be removed from the state
+  def schedule_task(%STC.Event.Completed{task_id: _task_id}, %State{} = state) do
+    state
+  end
+
+  # started - can tick event
+  def schedule_task(%STC.Event.Started{task_id: _task_id}, %State{} = state) do
+    state
+  end
+
+  # failed events can be removed from the state
   def schedule_task(_, %State{} = state) do
     state
   end
@@ -217,6 +234,12 @@ defmodule STC.Scheduler do
   def poll_ready_events(_state) do
     # poll event store for tasks ready to be scheduled
     events = Store.filter_events(STC.Event.Ready)
+    events
+  end
+
+  def poll_started_events(_state) do
+    # poll event store for tasks ready to be scheduled
+    events = Store.filter_events(STC.Event.Started)
     events
   end
 

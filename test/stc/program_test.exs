@@ -17,22 +17,20 @@ defmodule STC.ProgramTest do
 
     program =
       Program.parallel([
-        Program.run(TestAddTask, %{a: 1, b: 1}, :add1),
-        Program.run(TestAddTask, %{a: 1, b: 1}, :add2)
+        Program.run(TestAddTask, %{a: 1, b: 1}),
+        Program.run(TestAddTask, %{a: 1, b: 1})
       ])
       |> bind(fn
         [2, 2] ->
           Program.run(
             TestAddTask,
-            %{a: 2, b: 2 + 10},
-            :add_3
+            %{a: 2, b: 2 + 10}
           )
 
         [r1, r2] ->
           Program.run(
             TestAddTask,
-            %{a: r1, b: r2 + 1},
-            :add_3
+            %{a: r1, b: r2 + 1}
           )
       end)
 
