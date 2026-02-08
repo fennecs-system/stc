@@ -14,7 +14,7 @@ defmodule STC.Event.Store do
     GenServer.call(__MODULE__, {:try_lock, task_id, lock, caller_id})
   end
 
-  def init(state) do
+  def init(_state) do
     {:ok, %{events: [], locks: %{}, event_to_lock: %{}, subscribers: []}}
   end
 

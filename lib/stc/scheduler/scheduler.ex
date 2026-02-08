@@ -5,7 +5,6 @@ defmodule STC.Scheduler do
   use GenServer
   require Logger
 
-  alias STC.Agent
   alias STC.Event.Store
   alias STC.Scheduler.Executor
   alias STC.Spec
@@ -84,10 +83,10 @@ defmodule STC.Scheduler do
 
     events = ready_events ++ completed_events ++ started_events
 
-    events = schedule_event_order(events, state)
-
     state =
-      Enum.reduce(events, state, fn event, acc ->
+      events
+      |> schedule_event_order(state)
+      |> Enum.reduce(state, fn event, acc ->
         # Logger.info("scheduling task #{event.task_id} in scheduler #{state.id}")
         schedule_task(event, acc)
       end)
@@ -120,7 +119,7 @@ defmodule STC.Scheduler do
   # ready events get scheduled
   def schedule_task(%STC.Event.Ready{} = event, %State{} = state) do
     with {:ok, state} <- try_acquire_lock(event.task_id, state),
-         {:ok, agents} <- select_agents_for_event(event, state),
+         {:ok, [_ | _] = agents} <- select_agents_for_event(event, state),
          {:ok, state} <- spawn_executor(event, agents, state) do
       state
     else
@@ -128,6 +127,10 @@ defmodule STC.Scheduler do
         state
 
       {:error, :no_capacity} ->
+        state
+
+      {:error, :failed_to_spawn} ->
+        # cleanup
         state
 
       {:error, _reason} ->
@@ -188,37 +191,36 @@ defmodule STC.Scheduler do
   def spawn_executor(event, agents, state) do
     # spawn executor process for task on selected agents
     # track active tasks
-    {:ok, pid} =
-      Executor.start_link(%{
-        workflow_id: event.workflow_id,
-        task_id: event.task_id,
-        task_spec: Spec.new(event.module, event.payload),
-        agents: agents,
-        agent_ids: Enum.map(agents, fn a -> a.id end),
-        scheduler_id: state.id,
-        reply_buffer: state.reply_buffer,
-        attempt: 1,
-        cluster_id: nil,
-        space_id: nil
-      })
-
-    state = %{state | active_tasks: Map.put(state.active_tasks, event.task_id, pid)}
-
-    # for each agent, add it to the agent ids
-
-    agent_tasks =
-      Enum.reduce(
-        agents,
-        state.agent_tasks,
-        fn agent, tasks ->
-          Map.update(tasks, agent.id, [event.task_id], fn ids -> [event.task_id | ids] end)
-        end
-      )
-      |> dbg()
-
-    state = %{state | agent_tasks: agent_tasks} |> dbg()
-
-    {:ok, state}
+    with {:ok, pid} <-
+           Executor.start_link(%{
+             workflow_id: event.workflow_id,
+             task_id: event.task_id,
+             task_spec: Spec.new(event.module, event.payload),
+             agents: agents,
+             agent_ids: Enum.map(agents, fn a -> a.id end),
+             scheduler_id: state.id,
+             reply_buffer: state.reply_buffer,
+             attempt: 1,
+             cluster_id: nil,
+             space_id: nil
+           }),
+         state <- %{state | active_tasks: Map.put(state.active_tasks, event.task_id, pid)},
+         # for each agent, add it to the agent ids
+         agent_tasks <-
+           Enum.reduce(
+             agents,
+             state.agent_tasks,
+             fn agent, tasks ->
+               Map.update(tasks, agent.id, [event.task_id], fn ids -> [event.task_id | ids] end)
+             end
+           )
+           |> dbg(),
+         state <- %{state | agent_tasks: agent_tasks} do
+      {:ok, state}
+    else
+      _error ->
+        {:error, :failed_to_spawn}
+    end
   end
 
   defp agent_matches_requirements?(_agent, _event) do

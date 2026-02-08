@@ -12,35 +12,25 @@ defmodule STC.Interpreter.Distributed do
     GenServer.start_link(__MODULE__, %{}, name: __MODULE__)
   end
 
-  def init(state) do
+  def init(_state) do
     pid = self()
     Store.subscribe(pid)
     {:ok, %{}}
   end
 
   def handle_info(
-        %STC.Event.Completed{
-          workflow_id: wf_id,
-          task_id: task_id,
-          result: result
-        } = event,
+        event,
         state
       ) do
-    state = handle_completed(event, state)
-    {:noreply, state}
+    {:noreply, handle_event(event, state)}
   end
 
-  def handle_info(event, state) do
-    # Logger.info("Received event: #{inspect(event)}")
-    {:noreply, state}
-  end
-
-  def handle_completed(
+  def handle_event(
         %STC.Event.Completed{
           workflow_id: wf_id,
           task_id: task_id,
           result: result
-        } = event,
+        } = _event,
         state
       ) do
     {:ok, program} = ProgramStore.get(wf_id) |> dbg()
@@ -66,9 +56,11 @@ defmodule STC.Interpreter.Distributed do
     state
   end
 
-  defp next({:pure, _a}, _task_id, _result, workflow_id) do
+  def handle_event(_event, state), do: state
+
+  defp next({:pure, a}, _task_id, _result, workflow_id) do
     Logger.info("Workflow #{workflow_id} complete")
-    {{:pure, _a}, []}
+    {{:pure, a}, []}
   end
 
   defp next(
@@ -85,7 +77,7 @@ defmodule STC.Interpreter.Distributed do
   end
 
   defp next(
-         {:free, %Op.Run{} = op, cont_fn} = program,
+         {:free, %Op.Run{} = _op, _cont_fn} = program,
          _task_id,
          _result,
          _workflow_id

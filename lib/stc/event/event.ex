@@ -3,7 +3,15 @@ defmodule STC.Event do
 
   defmodule Ready do
     @moduledoc false
-    defstruct [:workflow_id, :task_id, :module, :payload, :space_affinity, :timestamp, :scheduled]
+    defstruct [
+      :workflow_id,
+      :task_id,
+      :module,
+      :payload,
+      :space_affinity,
+      :timestamp,
+      :scheduled?
+    ]
   end
 
   defmodule Started do

@@ -115,7 +115,7 @@ defmodule STC.Interpreter do
             module: mod,
             payload: payload,
             space_affinity: affinity
-          }, cont_fn},
+          }, _cont_fn},
          context
        ) do
     # Emit TaskReady event for schedulers to pick up
