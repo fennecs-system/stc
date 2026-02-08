@@ -9,17 +9,17 @@ defmodule STC.Task do
   So we can look at all the stored events. If a task was in procsess, but the app died, and we can reconstruct the
   state based on all the events, and look at what needs to be rolled back.
   """
+  alias STC.Task.Spec
 
-  @callback execute(spec :: map(), context :: map()) ::
+  @callback execute(spec :: Spec.t(), context :: map()) ::
               {:ok, result :: any()} | {:started, handle :: any()} | {:error, reason :: any()}
 
   # rollback semantics
-  @callback clean(spec :: map(), context :: map()) :: :ok | {:error, reason :: any()}
+  @callback clean(spec :: Spec.t(), context :: map()) :: :ok | {:error, reason :: any()}
 
   @callback retriable?(reason :: any()) :: boolean()
 
   @optional_callbacks retriable?: 1, clean: 2
-
   @doc """
   Default implementation of is_retriable? if the task module does not implement it
   """
@@ -41,4 +41,5 @@ defmodule STC.Task do
       :ok
     end
   end
+
 end

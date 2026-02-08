@@ -1,3 +1,40 @@
+defmodule STC.Scheduler.Executor.State do
+  defstruct [
+    :agents,
+    :workflow_id,
+    :task_id,
+    :task_spec,
+    :attempt,
+    :agent_ids,
+    :space_id,
+    :cluster_id,
+    # store a reference to the pid
+    :reply_buffer,
+
+    :scheduler_id,
+    # tunable timeouts for async tasks
+    :startup_timeout_ref,
+    :task_timeout_ref
+  ]
+
+  @type t :: %__MODULE__{
+          workflow_id: String.t(),
+          task_id: String.t(),
+          task_spec: any(),
+          agents: list(),
+          scheduler_id: reference() | nil,
+          reply_buffer: reference() | nil,
+          attempt: integer(),
+          agent_ids: list(),
+          cluster_id: String.t() | nil,
+          space_id: String.t() | nil,
+
+          # tunable timeouts for async tasks
+          startup_timeout_ref: reference() | nil,
+          task_timeout_ref: reference() | nil
+        }
+end
+
 defmodule STC.Scheduler.Executor do
   @moduledoc """
   Executes a task - can be used
@@ -6,23 +43,6 @@ defmodule STC.Scheduler.Executor do
 
   alias STC.Event
   alias STC.Event.Store
-
-  defstruct [
-    :name,
-    :agents,
-    :workflow_id,
-    :task_id,
-    :module,
-    :attempt,
-    :cluster_id,
-    :space_id,
-    # store a reference to the pid
-    :reply_buffer,
-
-    # tunable timeouts for async tasks
-    :startup_timeout_ref,
-    :task_timeout_ref
-  ]
 
   def via(task_id) do
     {:via, Horde.Registry, {STC.ExecutorRegistry, "executor_#{task_id}"}}

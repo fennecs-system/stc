@@ -1,15 +1,15 @@
-defmodule STC.RetryPolicy do
+defmodule STC.Task.RetryPolicy do
   @moduledoc """
   Executes a task
   """
+  defstruct max_attempts: 3, backoff_ms: 1000, retriable_reasons: :all
 
   @type t :: %__MODULE__{
           max_attempts: pos_integer(),
           backoff_ms: pos_integer(),
-          retriable_reasons: [String.t()] | :all
+          retriable_reasons: [atom()] | :all
         }
 
-  defstruct max_attempts: 3, backoff_ms: 1000, retriable_reasons: :all
 
   def retriable?(%__MODULE__{} = policy, reason) do
     case policy.retriable_reasons do

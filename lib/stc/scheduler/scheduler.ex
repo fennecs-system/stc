@@ -7,7 +7,7 @@ defmodule STC.Scheduler do
 
   alias STC.Event.Store
   alias STC.Scheduler.Executor
-  alias STC.Spec
+  alias STC.Task.Spec
   # alias STC.Scheduler.Algorithm
   alias STC.ReplyBuffer
 
@@ -268,5 +268,22 @@ defmodule STC.Scheduler do
 
   def recover_active_tasks(state) do
     state
+  end
+
+  # remove from all state
+  def cleanup(%State{active_tasks: active_tasks} = state, task_id)
+      when is_map_key(active_tasks, task_id) do
+    # shut down the executor
+    exe_pid = Map.get(active_tasks, task_id)
+
+    GenServer.stop(exe_pid)
+
+    # cleanup active_tasks
+
+    active_tasks = Map.delete(active_tasks, task_id)
+
+    # remove out of any agents
+
+    {:ok, :done}
   end
 end
