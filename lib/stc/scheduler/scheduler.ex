@@ -1,42 +1,11 @@
-defmodule STC.Scheduler.State do
-  defstruct [
-    :id,
-    # what level does this scheduler operate at? local? space? cluster?
-    :level,
-    :agent_pool,
-    # agents that might be temporarily inactive - eg small timeout,
-    :stale_agent_pool,
-    :algorithm,
-    # agent_id => [task_id]
-    :agent_tasks,
-    :task_locks,
-    # task_id => {pid, os pid, systemd unit etc}
-    :active_tasks,
-    :event_loop_ref,
-    # AgentReplyBuffer.t()
-    :reply_buffer
-  ]
-
-  @type t :: %__MODULE__{
-          id: String.t(),
-          level: atom(),
-          agent_pool: list(),
-          stale_agent_pool: list(),
-          algorithm: module(),
-          agent_tasks: map(),
-          task_locks: map(),
-          active_tasks: map(),
-          event_loop_ref: reference() | nil,
-          reply_buffer: pid()
-        }
-end
-
 defmodule STC.Scheduler do
   @moduledoc """
   A generic scheduler for STC tasks
   """
   use GenServer
   require Logger
+
+  alias STC.Agent
   alias STC.Event.Store
   alias STC.Scheduler.Executor
   alias STC.Spec
@@ -67,8 +36,10 @@ defmodule STC.Scheduler do
       agent_pool: [],
       stale_agent_pool: [],
       algorithm: Keyword.get(opts, :algorithm),
+      # map of agent id => tasks
       agent_tasks: %{},
       task_locks: %{},
+      # map of task id => executor
       active_tasks: %{},
       event_loop_ref: nil,
       reply_buffer: pid
@@ -90,7 +61,8 @@ defmodule STC.Scheduler do
   end
 
   def handle_info(:event_loop, %State{} = state) do
-    state =
+    %State{} =
+      state =
       state
       |> refresh_agent_pool()
       |> reconcile_stale_agents()
@@ -99,7 +71,6 @@ defmodule STC.Scheduler do
     ready_events = poll_ready_events(state)
     # return events
     # pause_events = poll_pause_events(state)
-
 
     # started events
 
@@ -126,12 +97,18 @@ defmodule STC.Scheduler do
     {:noreply, schedule_event_loop(state)}
   rescue
     err ->
-      Logger.error("Rescued error in scheduler #{state.id} event loop: #{Exception.format(:error, err, __STACKTRACE__)}")
+      Logger.error(
+        "Rescued error in scheduler #{state.id} event loop: #{Exception.format(:error, err, __STACKTRACE__)}"
+      )
+
       {:noreply, schedule_event_loop(state)}
   catch
-    kind, payload
-    Logger.error("Caught error in scheduler #{state.id} event loop: #{Exception.format(kind, payload, __STACKTRACE__)}")
-    {:noreply, schedule_event_loop(state)}
+    kind, payload ->
+      Logger.error(
+        "Caught error in scheduler #{state.id} event loop: #{Exception.format(kind, payload, __STACKTRACE__)}"
+      )
+
+      {:noreply, schedule_event_loop(state)}
   end
 
   def schedule_event_loop(%State{} = state) do
@@ -189,20 +166,23 @@ defmodule STC.Scheduler do
     end
   end
 
-  def schedule_event_order(events, state) do
-    # currently no special ordering
-    state.algorithm.schedule_event_order(events, state)
-  end
+  def schedule_event_order(events, state), do: state.algorithm.schedule_event_order(events, state)
 
-  def select_agents_for_event(event, state) do
-    available =
-      state.agent_pool
-      |> Enum.filter(fn agent ->
-        agent_matches_requirements?(agent, event) &&
-          (agent_is_free?(agent, state) || can_oversubscribe?(agent, event, state))
-      end)
+  def process_agent_buffer(state), do: state.algorithm.process_agent_buffer(state)
 
-    state.algorithm.select_agents_for_event(event, available, state)
+  def select_agents_for_event(event, %State{} = state) do
+    case state.agent_pool
+         |> Enum.filter(fn agent ->
+           agent_matches_requirements?(agent, event) and
+             (agent_is_free?(agent, state) or can_oversubscribe?(agent, event, state))
+         end) do
+      [] ->
+        Logger.warning("No capacity for event #{inspect(event)}")
+        {:error, :no_capacity}
+
+      [_ | _] = available ->
+        state.algorithm.select_agents_for_event(event, available, state)
+    end
   end
 
   def spawn_executor(event, agents, state) do
@@ -224,6 +204,20 @@ defmodule STC.Scheduler do
 
     state = %{state | active_tasks: Map.put(state.active_tasks, event.task_id, pid)}
 
+    # for each agent, add it to the agent ids
+
+    agent_tasks =
+      Enum.reduce(
+        agents,
+        state.agent_tasks,
+        fn agent, tasks ->
+          Map.update(tasks, agent.id, [event.task_id], fn ids -> [event.task_id | ids] end)
+        end
+      )
+      |> dbg()
+
+    state = %{state | agent_tasks: agent_tasks} |> dbg()
+
     {:ok, state}
   end
 
@@ -232,8 +226,9 @@ defmodule STC.Scheduler do
     true
   end
 
-  defp agent_is_free?(agent, state) do
-    Map.get(state.agent_tasks, agent.id, [])
+  defp agent_is_free?(%{id: id} = _agent, %State{} = state) do
+    state.agent_tasks
+    |> Map.get(id, [])
     |> Enum.empty?()
   end
 
@@ -242,10 +237,7 @@ defmodule STC.Scheduler do
     false
   end
 
-  def refresh_agent_pool(state) do
-    new_agent_pool = state.algorithm.refresh_agent_pool(state)
-    %{state | agent_pool: new_agent_pool}
-  end
+  def refresh_agent_pool(state), do: state.algorithm.refresh_agent_pool(state)
 
   def reconcile_stale_agents(state) do
     state
@@ -268,7 +260,6 @@ defmodule STC.Scheduler do
     events
   end
 
-
   def recover_state_from_events(state, _event) do
     state
   end
@@ -276,6 +267,4 @@ defmodule STC.Scheduler do
   def recover_active_tasks(state) do
     state
   end
-
-
 end

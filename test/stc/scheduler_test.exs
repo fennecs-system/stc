@@ -60,7 +60,7 @@ defmodule STC.SchedulerTest do
         Program.run(
           TestAddTask,
           %{a: r1, b: r2 + 1},
-          :add_3
+          :add3
         )
       end)
 

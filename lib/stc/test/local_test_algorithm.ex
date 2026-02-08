@@ -2,14 +2,16 @@ defmodule STC.Scheduler.Algorithm.LocalTestAlgorithm do
   @moduledoc """
   A simple local test scheduling algorithm. All it does is spawn local agents (just a simple Task).
   """
-  alias STC.LocalTestAgent
+  alias STC.Agent.LocalTestAgent
 
   @behaviour STC.Scheduler.Algorithm
 
   def refresh_agent_pool(state) do
     # For local test algorithm, just return some dummy agents" end)
-    agents = Enum.map(1..5, fn i -> %LocalTestAgent{id: "local_test_agent_#{i}"} end)
-    agents
+    agents =
+      Enum.map(1..5, fn i -> %LocalTestAgent{id: "local_test_agent_#{i}", status: :active} end)
+
+    %{state | agent_pool: agents}
   end
 
   # overide for how to handle stale agents
@@ -31,4 +33,6 @@ defmodule STC.Scheduler.Algorithm.LocalTestAlgorithm do
   def select_agents_for_event(_event, [], _state) do
     {:error, :no_agents_available}
   end
+
+  def process_agent_buffer(state), do: state
 end

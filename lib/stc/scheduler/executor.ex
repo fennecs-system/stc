@@ -21,7 +21,7 @@ defmodule STC.Scheduler.Executor do
 
     # tunable timeouts for async tasks
     :startup_timeout_ref,
-    :task_timeout_ref,
+    :task_timeout_ref
   ]
 
   def via(task_id) do
@@ -62,19 +62,26 @@ defmodule STC.Scheduler.Executor do
         # for async tasks
         # spawn a timeout
 
-        startup_timeout_ref = if Map.has_key?(state.task_spec, :startup_timeout_ms) do
-          Process.send_after(self(), :startup_timeout, state.task_spec.startup_timeout_ms)
-        else
-          nil
-        end
+        startup_timeout_ref =
+          if Map.has_key?(state.task_spec, :startup_timeout_ms) do
+            Process.send_after(self(), :startup_timeout, state.task_spec.startup_timeout_ms)
+          else
+            nil
+          end
 
-        task_timeout_ref = if Map.has_key?(state.task_spec, :timeout_ms) do
-          Process.send_after(self(), :task_timeout, state.task_spec.timeout_ms)
-        else
-          nil
-        end
+        task_timeout_ref =
+          if Map.has_key?(state.task_spec, :timeout_ms) do
+            Process.send_after(self(), :task_timeout, state.task_spec.timeout_ms)
+          else
+            nil
+          end
 
-        state = %{state | startup_timeout_ref: startup_timeout_ref, task_timeout_ref: task_timeout_ref}
+        state = %{
+          state
+          | startup_timeout_ref: startup_timeout_ref,
+            task_timeout_ref: task_timeout_ref
+        }
+
         emit_started(state, handle)
         {:noreply, state}
 

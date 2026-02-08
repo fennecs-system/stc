@@ -6,4 +6,9 @@ defmodule STC.Agent do
     :id,
     :status
   ]
+
+  @type t :: %__MODULE__{
+          id: String.t(),
+          status: atom()
+        }
 end
