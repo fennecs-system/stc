@@ -2,8 +2,6 @@ defmodule STC.Op do
   @moduledoc """
   woof woof bark bark oppies for the free monad
   """
-  alias GenLSP.Requests.TextDocumentFormatting
-  alias Hex.Solver.Term
 
   defmodule Run do
     @moduledoc false
