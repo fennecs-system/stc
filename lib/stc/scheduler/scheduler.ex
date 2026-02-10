@@ -1,20 +1,20 @@
-defmodule STC.Scheduler do
+defmodule Stc.Scheduler do
   @moduledoc """
-  A generic scheduler for STC tasks
+  A generic scheduler for Stc tasks
   """
   use GenServer
   require Logger
 
-  alias STC.Event.Store
-  alias STC.Scheduler.Executor
-  alias STC.Task.Spec
-  # alias STC.Scheduler.Algorithm
-  alias STC.ReplyBuffer
+  alias Stc.Event.Store
+  alias Stc.Scheduler.Executor
+  alias Stc.Task.Spec
+  # alias Stc.Scheduler.Algorithm
+  alias Stc.ReplyBuffer
 
-  alias STC.Scheduler.State
+  alias Stc.Scheduler.State
 
   def via(id) do
-    {:via, Horde.Registry, {STC.SchedulerRegistry, "scheduler_#{id}"}}
+    {:via, Horde.Registry, {Stc.SchedulerRegistry, "scheduler_#{id}"}}
   end
 
   # start with horde probs
@@ -117,7 +117,7 @@ defmodule STC.Scheduler do
   end
 
   # ready events get scheduled
-  def schedule_task(%STC.Event.Ready{} = event, %State{} = state) do
+  def schedule_task(%Stc.Event.Ready{} = event, %State{} = state) do
     with {:ok, state} <- try_acquire_lock(event.task_id, state),
          {:ok, [_ | _] = agents} <- select_agents_for_event(event, state),
          {:ok, state} <- spawn_executor(event, agents, state) do
@@ -139,12 +139,12 @@ defmodule STC.Scheduler do
   end
 
   # completed events can be removed from the state
-  def schedule_task(%STC.Event.Completed{task_id: _task_id}, %State{} = state) do
+  def schedule_task(%Stc.Event.Completed{task_id: _task_id}, %State{} = state) do
     state
   end
 
   # started - can tick event
-  def schedule_task(%STC.Event.Started{task_id: _task_id}, %State{} = state) do
+  def schedule_task(%Stc.Event.Started{task_id: _task_id}, %State{} = state) do
     state
   end
 
@@ -247,18 +247,18 @@ defmodule STC.Scheduler do
 
   def poll_ready_events(_state) do
     # poll event store for tasks ready to be scheduled
-    events = Store.filter_events(STC.Event.Ready)
+    events = Store.filter_events(Stc.Event.Ready)
     events
   end
 
   def poll_started_events(_state) do
     # poll event store for tasks ready to be scheduled
-    events = Store.filter_events(STC.Event.Started)
+    events = Store.filter_events(Stc.Event.Started)
     events
   end
 
   def poll_completed_events(_state) do
-    events = Store.filter_events(STC.Event.Completed)
+    events = Store.filter_events(Stc.Event.Completed)
     events
   end
 

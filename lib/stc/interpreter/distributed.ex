@@ -1,12 +1,12 @@
-defmodule STC.Interpreter.Distributed do
+defmodule Stc.Interpreter.Distributed do
   @moduledoc """
   A GenServer that walks continuations and executes them.
   """
   use GenServer
   require Logger
-  alias STC.Event.Store
-  alias STC.Program.Store, as: ProgramStore
-  alias STC.Op
+  alias Stc.Event.Store
+  alias Stc.Program.Store, as: ProgramStore
+  alias Stc.Op
 
   def start_link(_opts) do
     GenServer.start_link(__MODULE__, %{}, name: __MODULE__)
@@ -26,7 +26,7 @@ defmodule STC.Interpreter.Distributed do
   end
 
   def handle_event(
-        %STC.Event.Completed{
+        %Stc.Event.Completed{
           workflow_id: wf_id,
           task_id: task_id,
           result: result
@@ -42,7 +42,7 @@ defmodule STC.Interpreter.Distributed do
     ProgramStore.put(wf_id, next_program)
 
     Enum.each(ready_tasks, fn task_info ->
-      event = %STC.Event.Ready{
+      event = %Stc.Event.Ready{
         workflow_id: wf_id,
         task_id: task_info.task_id,
         module: task_info.module,

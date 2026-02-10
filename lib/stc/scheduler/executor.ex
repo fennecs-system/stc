@@ -1,4 +1,4 @@
-defmodule STC.Scheduler.Executor.State do
+defmodule Stc.Scheduler.Executor.State do
   defstruct [
     :agents,
     :workflow_id,
@@ -35,17 +35,17 @@ defmodule STC.Scheduler.Executor.State do
         }
 end
 
-defmodule STC.Scheduler.Executor do
+defmodule Stc.Scheduler.Executor do
   @moduledoc """
   Executes a task - can be used
   """
   use GenServer
 
-  alias STC.Event
-  alias STC.Event.Store
+  alias Stc.Event
+  alias Stc.Event.Store
 
   def via(task_id) do
-    {:via, Horde.Registry, {STC.ExecutorRegistry, "executor_#{task_id}"}}
+    {:via, Horde.Registry, {Stc.ExecutorRegistry, "executor_#{task_id}"}}
   end
 
   def start_link(config) do
@@ -55,12 +55,12 @@ defmodule STC.Scheduler.Executor do
 
   @impl true
   def init(config) do
-    send(self(), :execute)
+    send(self(), :start)
     {:ok, config}
   end
 
   @impl true
-  def handle_info(:execute, state) do
+  def handle_info(:start, state) do
     context = %{
       agents: state.agents,
       workflow_id: state.workflow_id,
@@ -72,7 +72,7 @@ defmodule STC.Scheduler.Executor do
       reply_buffer: state.reply_buffer
     }
 
-    case state.task_spec.module.execute(state.task_spec, context) do
+    case state.task_spec.module.start(state.task_spec, context) do
       {:ok, result} ->
         # for tasks that complete immediately
         emit_completion(state, result)
@@ -107,7 +107,7 @@ defmodule STC.Scheduler.Executor do
 
       {:error, reason} ->
         should_retry? =
-          STC.Task.retriable?(state.task_spec.module, reason) &&
+          Stc.Task.retriable?(state.task_spec.module, reason) &&
             state.attempt < state.max_attempts
 
         # try cleanup
@@ -117,7 +117,7 @@ defmodule STC.Scheduler.Executor do
         if should_retry? do
           emit_failure(state, reason, true)
           backoff = state.task_spec.retry_policy.backoff_ms
-          Process.send_after(self(), :execute, backoff)
+          Process.send_after(self(), :start, backoff)
           {:noreply, Map.put(state, :attempt, state.attempt + 1)}
         else
           emit_failure(state, reason, false)

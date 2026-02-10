@@ -1,9 +1,9 @@
-defmodule STC.Task.TestAddTask do
+defmodule Stc.Task.TestAddTask do
   @moduledoc false
-  @behaviour STC.Task
+  @behaviour Stc.Task
 
   @impl true
-  def execute(%{payload: %{a: a, b: b}}, _context \\ []) do
+  def start(%{payload: %{a: a, b: b}}, _context \\ []) do
     {:ok, a + b}
   end
 end

@@ -1,4 +1,4 @@
-defmodule STC.Scheduler.State do
+defmodule Stc.Scheduler.State do
   @moduledoc """
   The state of the scheduler
   """

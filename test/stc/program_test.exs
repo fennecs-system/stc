@@ -1,13 +1,13 @@
-defmodule STC.ProgramTest do
+defmodule Stc.ProgramTest do
   use ExUnit.Case
 
-  alias STC.Interpreter
-  alias STC.Event.Store
-  alias STC.Program
+  alias Stc.Interpreter
+  alias Stc.Event.Store
+  alias Stc.Program
 
-  alias STC.Task.TestAddTask
+  alias Stc.Task.TestAddTask
 
-  import STC.Free
+  import Stc.Free
 
   test "basic addition test" do
     # (1 + 1) + (1 + 1) + 1

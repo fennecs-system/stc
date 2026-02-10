@@ -1,10 +1,10 @@
-defmodule STC.Program do
+defmodule Stc.Program do
   @moduledoc """
-  A program is a sequence of operations to be executed by the STC
+  A program is a sequence of operations to be executed by the Stc
   """
 
-  alias STC.Op
-  import STC.Free
+  alias Stc.Op
+  import Stc.Free
 
   def run(module, payload, task_id \\ nil, opts \\ [])
 

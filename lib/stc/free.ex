@@ -1,4 +1,4 @@
-defmodule STC.Free do
+defmodule Stc.Free do
   @moduledoc """
   A free monad
   """

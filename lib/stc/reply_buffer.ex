@@ -1,4 +1,4 @@
-defmodule STC.ReplyBuffer do
+defmodule Stc.ReplyBuffer do
   @moduledoc """
   A buffer for replies from agents
 
@@ -49,6 +49,6 @@ defmodule STC.ReplyBuffer do
   end
 
   def via(scheduler_id) do
-    {:via, Horde.Registry, {STC.SchedulerRegistry, "scheduler_reply_buffer_#{scheduler_id}"}}
+    {:via, Horde.Registry, {Stc.SchedulerRegistry, "scheduler_reply_buffer_#{scheduler_id}"}}
   end
 end

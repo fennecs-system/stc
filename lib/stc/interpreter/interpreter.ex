@@ -1,13 +1,13 @@
-defmodule STC.Interpreter do
+defmodule Stc.Interpreter do
   @moduledoc """
-  Interpreter for STC programs
+  Interpreter for Stc programs
   """
 
-  alias STC.Event
-  alias STC.Event.Store
-  alias STC.Op
-  alias STC.Spec
-  alias STC.Program.Store, as: ProgramStore
+  alias Stc.Event
+  alias Stc.Event.Store
+  alias Stc.Op
+  alias Stc.Spec
+  alias Stc.Program.Store, as: ProgramStore
 
   def local(program, context) do
     interpret_local(program, context)

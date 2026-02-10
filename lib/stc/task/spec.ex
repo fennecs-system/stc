@@ -1,8 +1,8 @@
-defmodule STC.Task.Spec do
+defmodule Stc.Task.Spec do
   @moduledoc """
   Generic specification for a task
   """
-  alias STC.Task.RetryPolicy
+  alias Stc.Task.RetryPolicy
 
   defstruct [
     :module,

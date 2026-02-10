@@ -1,10 +1,10 @@
-defmodule STC.Scheduler.Algorithm.LocalTestAlgorithm do
+defmodule Stc.Scheduler.Algorithm.LocalTestAlgorithm do
   @moduledoc """
   A simple local test scheduling algorithm. All it does is spawn local agents (just a simple Task).
   """
-  alias STC.Agent.LocalTestAgent
+  alias Stc.Agent.LocalTestAgent
 
-  @behaviour STC.Scheduler.Algorithm
+  @behaviour Stc.Scheduler.Algorithm
 
   def refresh_agent_pool(state) do
     # For local test algorithm, just return some dummy agents" end)

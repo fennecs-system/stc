@@ -1,6 +1,6 @@
-defmodule STC.Agent do
+defmodule Stc.Agent do
   @moduledoc """
-  A generic behaviour for STC agents
+  A generic behaviour for Stc agents
   """
   defstruct [
     :id,

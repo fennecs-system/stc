@@ -2,7 +2,7 @@
 
 ## About
 
-STC is wip library for declarative programmatic workflows in elixir using a simple monad like syntax:
+Stc is wip library for declarative programmatic workflows in elixir using a simple monad like syntax:
 
 ```elixir
 program =

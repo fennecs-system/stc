@@ -1,4 +1,4 @@
-defmodule STC.Event do
+defmodule Stc.Event do
   @moduledoc false
 
   defmodule Ready do

@@ -1,4 +1,4 @@
-defmodule STC.Op do
+defmodule Stc.Op do
   @moduledoc """
   woof woof bark bark oppies for the free monad
   """

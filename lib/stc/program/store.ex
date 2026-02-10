@@ -1,4 +1,4 @@
-defmodule STC.Program.Store do
+defmodule Stc.Program.Store do
   @moduledoc """
   A table for storing a program to track progress in distributed execution.
   """

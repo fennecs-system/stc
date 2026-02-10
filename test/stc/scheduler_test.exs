@@ -1,32 +1,32 @@
-defmodule STC.SchedulerTest do
+defmodule Stc.SchedulerTest do
   use ExUnit.Case
 
-  alias STC.Scheduler
-  alias STC.Scheduler.Algorithm.LocalTestAlgorithm
+  alias Stc.Scheduler
+  alias Stc.Scheduler.Algorithm.LocalTestAlgorithm
 
-  alias STC.Event.Store
+  alias Stc.Event.Store
 
-  alias STC.Interpreter
-  alias STC.Interpreter.Distributed
+  alias Stc.Interpreter
+  alias Stc.Interpreter.Distributed
 
-  alias STC.Program
-  alias STC.Program.Store, as: ProgramStore
+  alias Stc.Program
+  alias Stc.Program.Store, as: ProgramStore
 
-  import STC.Free
+  import Stc.Free
 
-  alias STC.Task.TestAddTask
+  alias Stc.Task.TestAddTask
 
   setup do
     {:ok, sched_reg_pid} =
       Horde.Registry.start_link(
-        name: STC.SchedulerRegistry,
+        name: Stc.SchedulerRegistry,
         keys: :unique,
         members: :auto
       )
 
     {:ok, exe_reg_pid} =
       Horde.Registry.start_link(
-        name: STC.ExecutorRegistry,
+        name: Stc.ExecutorRegistry,
         keys: :unique,
         members: :auto
       )

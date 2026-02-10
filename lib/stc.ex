@@ -1,4 +1,4 @@
-defmodule STC do
+defmodule Stc do
   @moduledoc """
   A generic scheduler for all operations on strong compute
 

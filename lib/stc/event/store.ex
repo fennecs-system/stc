@@ -1,6 +1,6 @@
-defmodule STC.Event.Store do
+defmodule Stc.Event.Store do
   @moduledoc """
-  A simple event store for STC events. Stores events in memory for now.
+  A simple event store for Stc events. Stores events in memory for now.
   """
   use GenServer
 

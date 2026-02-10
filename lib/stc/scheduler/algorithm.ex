@@ -1,8 +1,8 @@
-defmodule STC.Scheduler.Algorithm do
+defmodule Stc.Scheduler.Algorithm do
   @moduledoc """
   Behaviour for scheduling strategies
   """
-  alias STC.Scheduler.State
+  alias Stc.Scheduler.State
 
   # how to refresh the agent pool
   @callback refresh_agent_pool(state :: State.t()) :: State.t()

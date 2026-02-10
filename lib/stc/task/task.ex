@@ -1,17 +1,17 @@
-defmodule STC.Task do
+defmodule Stc.Task do
   @moduledoc """
   a generic task behavior
 
-  Tasks get executed by an agent -
+  Tasks get start by an agent -
 
   If the app dies a transactional style clean step is supported
 
   So we can look at all the stored events. If a task was in procsess, but the app died, and we can reconstruct the
   state based on all the events, and look at what needs to be rolled back.
   """
-  alias STC.Task.Spec
+  alias Stc.Task.Spec
 
-  @callback execute(spec :: Spec.t(), context :: map()) ::
+  @callback start(spec :: Spec.t(), context :: map()) ::
               {:ok, result :: any()} | {:started, handle :: any()} | {:error, reason :: any()}
 
   # rollback semantics
