@@ -22,6 +22,7 @@ defmodule Stc.MixProject do
   defp deps do
     [
       {:ecto, "~> 3.13"},
+      {:ecto_sql, "~> 3.13"},
       {:highlander, "~> 0.2"},
       {:horde, "~> 0.8"},
       # {:dep_from_hexpm, "~> 0.3.0"},

@@ -17,26 +17,23 @@ defmodule Stc.SchedulerTest do
   alias Stc.Task.TestAddTask
 
   setup do
-    {:ok, sched_reg_pid} =
-      Horde.Registry.start_link(
-        name: Stc.SchedulerRegistry,
-        keys: :unique,
-        members: :auto
+    sched_reg_pid =
+      start_supervised!(
+        {Horde.Registry, name: Stc.SchedulerRegistry, keys: :unique, members: :auto},
+        id: :sched_registry
       )
 
-    {:ok, exe_reg_pid} =
-      Horde.Registry.start_link(
-        name: Stc.ExecutorRegistry,
-        keys: :unique,
-        members: :auto
+    exe_reg_pid =
+      start_supervised!(
+        {Horde.Registry, name: Stc.ExecutorRegistry, keys: :unique, members: :auto},
+        id: :exe_registry
       )
 
-    {:ok, event_store_pid} = Store.start_link([])
+    start_supervised!(Store)
 
-    # spawn a horde registry for schedulers
     # currently needs to spawn after event store
-    {:ok, interp_pid} = Distributed.start_link([])
-    {:ok, prog_store_pid} = ProgramStore.start_link([])
+    start_supervised!(Distributed)
+    start_supervised!(ProgramStore)
 
     %{executor_registry: exe_reg_pid, scheduler_registry: sched_reg_pid}
   end
