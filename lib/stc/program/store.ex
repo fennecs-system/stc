@@ -22,18 +22,27 @@ defmodule Stc.Program.Store do
     GenServer.call(__MODULE__, {:get, key})
   end
 
+  def show() do
+    GenServer.call(__MODULE__, :show)
+  end
+
+  @impl true
+  def handle_call(:show, _from, state) do
+    {:reply, state, state} |> dbg()
+  end
+
   @impl true
   def handle_call({:put, key, value}, _from, state) do
     binary = :erlang.term_to_binary(value)
     new_state = Map.put(state, key, binary) |> dbg()
-    {:reply, :ok, new_state}
+    {:reply, :ok, new_state} |> dbg()
   end
 
   @impl true
   def handle_call({:get, key}, _from, state) when is_map_key(state, key) do
     binary = Map.get(state, key)
     value = :erlang.binary_to_term(binary)
-    {:reply, {:ok, value}, state}
+    {:reply, {:ok, value}, state} |> dbg()
   end
 
   def handle_call({:get, key}, _from, state) when is_map_key(state, key) do

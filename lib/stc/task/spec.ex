@@ -21,7 +21,7 @@ defmodule Stc.Task.Spec do
         }
 
   def new(module, payload, opts \\ []) do
-    retry_policy = Keyword.get(opts, :retry_policy, %RetryPolicy{ })
+    retry_policy = Keyword.get(opts, :retry_policy, %RetryPolicy{})
     timeout_ms = Keyword.get(opts, :timeout_ms, :timer.hours(1))
     startup_timeout_ms = Keyword.get(opts, :startup_timeout_ms, :timer.hours(1))
 

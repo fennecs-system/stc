@@ -72,6 +72,7 @@ defmodule Stc.SchedulerTest do
 
     Process.sleep(10_000)
     # terminate all pids
+    ProgramStore.show() |> dbg()
   end
 
   test "keeps running an infinite job", %{scheduler_registry: _pid} do

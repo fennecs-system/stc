@@ -41,5 +41,4 @@ defmodule Stc.Task do
       :ok
     end
   end
-
 end

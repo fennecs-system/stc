@@ -6,7 +6,7 @@ defmodule Stc.Interpreter do
   alias Stc.Event
   alias Stc.Event.Store
   alias Stc.Op
-  alias Stc.Spec
+  alias Stc.Task.Spec
   alias Stc.Program.Store, as: ProgramStore
 
   def local(program, context) do
@@ -32,7 +32,7 @@ defmodule Stc.Interpreter do
       timestamp: DateTime.utc_now()
     })
 
-    case mod.execute(task_spec, exec_context) do
+    case mod.start(task_spec, exec_context) do
       {:ok, result} ->
         interpret_local(cont_fn.(result), context)
 

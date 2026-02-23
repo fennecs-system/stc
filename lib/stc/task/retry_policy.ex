@@ -10,7 +10,6 @@ defmodule Stc.Task.RetryPolicy do
           retriable_reasons: [atom()] | :all
         }
 
-
   def retriable?(%__MODULE__{} = policy, reason) do
     case policy.retriable_reasons do
       :all -> true

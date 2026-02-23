@@ -10,7 +10,6 @@ defmodule Stc.Scheduler.Executor.State do
     :cluster_id,
     # store a reference to the pid
     :reply_buffer,
-
     :scheduler_id,
     # tunable timeouts for async tasks
     :startup_timeout_ref,
