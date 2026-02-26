@@ -82,6 +82,28 @@ defmodule Stc.Interpreter do
   end
 
   defp interpret_local(
+         {:free, %Op.Unfold{step_fn: step_fn, current_step: current_step}, cont_fn},
+         context
+       ) do
+    case interpret_local(current_step, context) do
+      {:ok, step_result} ->
+        case step_fn.(step_result) do
+          {:cont, next_step} ->
+            interpret_local(
+              {:free, %Op.Unfold{step_fn: step_fn, current_step: next_step}, cont_fn},
+              context
+            )
+
+          :halt ->
+            interpret_local(cont_fn.(step_result), context)
+        end
+
+      {:error, _} = err ->
+        err
+    end
+  end
+
+  defp interpret_local(
          {:free, %Op.EmitEvent{}, cont_fn},
          context
        ) do
@@ -150,6 +172,13 @@ defmodule Stc.Interpreter do
   end
 
   defp interpret_distributed(
+         {:free, %Op.Unfold{current_step: current_step}, _cont_fn},
+         context
+       ) do
+    interpret_distributed(current_step, context)
+  end
+
+  defp interpret_distributed(
          {:free, %Op.Parallel{programs: programs}, _cont_fn},
          context
        ) do
@@ -183,6 +212,10 @@ defmodule Stc.Interpreter do
 
   defp collect_steps({:free, %Op.OnFailure{task_id: id, handler: _handler}, _cont_fn}) do
     {:on_failure, id}
+  end
+
+  defp collect_steps({:free, %Op.Unfold{current_step: current_step}, _cont_fn}) do
+    {:unfold, collect_steps(current_step)}
   end
 
   defp collect_steps(_), do: :woof

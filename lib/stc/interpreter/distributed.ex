@@ -116,6 +116,32 @@ defmodule Stc.Interpreter.Distributed do
 
   @spec next(term(), String.t(), term(), String.t()) :: {term(), [map()]}
 
+  defp next(
+         {:free, %Op.Unfold{step_fn: step_fn, current_step: current_step}, cont_fn},
+         task_id,
+         result,
+         workflow_id
+       ) do
+    {updated_step, ready} = next(current_step, task_id, result, workflow_id)
+
+    case updated_step do
+      {:pure, step_result} ->
+        case step_fn.(step_result) do
+          {:cont, next_step} ->
+            new_node = {:free, %Op.Unfold{step_fn: step_fn, current_step: next_step}, cont_fn}
+            new_ready = extract_ready_tasks(next_step, workflow_id)
+            {new_node, ready ++ new_ready}
+
+          :halt ->
+            next_program = cont_fn.(step_result)
+            {next_program, ready ++ extract_ready_tasks(next_program, workflow_id)}
+        end
+
+      still_running ->
+        {{:free, %Op.Unfold{step_fn: step_fn, current_step: still_running}, cont_fn}, ready}
+    end
+  end
+
   defp next({:pure, _} = program, _task_id, _result, _workflow_id) do
     {program, []}
   end
@@ -202,6 +228,13 @@ defmodule Stc.Interpreter.Distributed do
   # ---------------------------------------------------------------------------
 
   @spec extract_ready_tasks(term(), String.t()) :: [map()]
+
+  defp extract_ready_tasks(
+         {:free, %Op.Unfold{current_step: current_step}, _cont_fn},
+         workflow_id
+       ) do
+    extract_ready_tasks(current_step, workflow_id)
+  end
 
   defp extract_ready_tasks({:pure, _}, _workflow_id), do: []
 
