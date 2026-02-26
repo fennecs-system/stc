@@ -144,9 +144,8 @@ defmodule Stc.Interpreter do
 
   defp interpret_distributed(
          {:free, %Op.Sequence{programs: []}, _cont_fn},
-         context
+         _context
        ) do
-    # nothing to do
     {:ok, :done}
   end
 

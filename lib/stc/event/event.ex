@@ -40,11 +40,7 @@ defmodule Stc.Event do
 
   defmodule Preempted do
     @moduledoc false
-    defstruct [:workflow_id,
-      :task_id,
-      :preempted_by,
-      :reason,
-      :timestamp]
+    defstruct [:workflow_id, :task_id, :preempted_by, :reason, :timestamp]
   end
 
   defmodule Failed do

@@ -10,12 +10,13 @@ defmodule Stc.Task do
   state based on all the events, and look at what needs to be rolled back.
   """
   alias Stc.Task.Spec
+  alias Stc.Task.Context
 
-  @callback start(spec :: Spec.t(), context :: map()) ::
+  @callback start(spec :: Spec.t(), context :: Context.t()) ::
               {:ok, result :: any()} | {:started, handle :: any()} | {:error, reason :: any()}
 
   # rollback semantics
-  @callback clean(spec :: Spec.t(), context :: map()) :: :ok | {:error, reason :: any()}
+  @callback clean(spec :: Spec.t(), context :: Context.t()) :: :ok | {:error, reason :: any()}
 
   @callback retriable?(reason :: any()) :: boolean()
 
