@@ -66,8 +66,6 @@ defmodule Stc.Scheduler.Executor do
 
   use GenServer
 
-  require Logger
-
   alias Stc.Event
   alias Stc.Event.Store
   alias Stc.ReplyBuffer
@@ -76,6 +74,8 @@ defmodule Stc.Scheduler.Executor do
   alias Stc.Task.Context
   alias Stc.Task.Result
   alias Stc.Task.Spec
+
+  require Logger
 
   # api
 

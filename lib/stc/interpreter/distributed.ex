@@ -18,6 +18,16 @@ defmodule Stc.Interpreter.Distributed do
   backend push semantics), the walker maintains its own `cursor` and polls for
   `Completed` events each tick. This makes it backend-agnostic and deterministic.
 
+  ## Cursor checkpointing
+
+  The cursor is persisted to the KV backend after each poll that advances it.
+  On restart the walker resumes from the saved position rather than replaying
+  from the beginning of the log. The checkpoint stores `{cursor, hash}` where
+  `hash = :erlang.phash2(cursor)` — a lightweight sanity check that catches
+  truncated writes or accidental key reuse. If the hash fails the walker falls
+  back to `origin/0` and replays in full (safe because `handle_completed/1` is
+  idempotent against an already-advanced program tree).
+
   ## Tick interval
 
   `@poll_interval_ms` controls how frequently the walker checks for new completions.
@@ -26,16 +36,18 @@ defmodule Stc.Interpreter.Distributed do
   """
 
   use GenServer
+
+  alias Stc.Backend
+  alias Stc.Event.Store
   alias Stc.Interpreter.Distributed.State
+  alias Stc.Op
+  alias Stc.Program.Store, as: ProgramStore
+  alias Stc.Task.Result
 
   require Logger
 
-  alias Stc.Event.Store
-  alias Stc.Program.Store, as: ProgramStore
-  alias Stc.Op
-  alias Stc.Task.Result
-
   @poll_interval_ms 250
+  @cursor_key "__stc__:walker:cursor"
 
   @doc false
   def start_link(_opts) do
@@ -44,7 +56,7 @@ defmodule Stc.Interpreter.Distributed do
 
   @impl true
   def init(%State{}) do
-    state = %State{cursor: Store.origin()}
+    state = %State{cursor: load_cursor()}
     schedule_poll()
     {:ok, state}
   end
@@ -55,6 +67,8 @@ defmodule Stc.Interpreter.Distributed do
       Store.fetch(cursor, types: [Stc.Event.Completed], limit: 100)
 
     Enum.each(events, &handle_completed/1)
+
+    if new_cursor != cursor, do: save_cursor(new_cursor)
 
     schedule_poll()
     {:noreply, %State{state | cursor: new_cursor}}
@@ -72,7 +86,7 @@ defmodule Stc.Interpreter.Distributed do
     # Tasks return %Result{} structs; unwrap so continuations receive plain values.
     result =
       case raw_result do
-        %Result{result: r} -> r
+        %Result{value: r} -> r
         r -> r
       end
 
@@ -262,4 +276,32 @@ defmodule Stc.Interpreter.Distributed do
 
   @spec schedule_poll() :: reference()
   defp schedule_poll, do: Process.send_after(self(), :poll, @poll_interval_ms)
+
+  # ---------------------------------------------------------------------------
+  # Cursor persistence
+  # ---------------------------------------------------------------------------
+
+  @spec load_cursor() :: Stc.Backend.EventLog.cursor()
+  defp load_cursor do
+    with {:ok, binary} <- Backend.kv().get(@cursor_key),
+         {cursor, hash} <- :erlang.binary_to_term(binary, [:safe]),
+         true <- :erlang.phash2(cursor) == hash do
+      cursor
+    else
+      {:error, :not_found} ->
+        Store.origin()
+
+      _ ->
+        Logger.warning(
+          "Stc.Interpreter.Distributed: cursor checkpoint corrupt, replaying from origin"
+        )
+
+        Store.origin()
+    end
+  end
+
+  @spec save_cursor(Stc.Backend.EventLog.cursor()) :: :ok | {:error, term()}
+  defp save_cursor(cursor) do
+    Backend.kv().put(@cursor_key, :erlang.term_to_binary({cursor, :erlang.phash2(cursor)}))
+  end
 end

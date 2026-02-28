@@ -15,9 +15,9 @@ defmodule Stc.Task do
   back to `clean/2` followed by a fresh `start/2`.
   """
 
+  alias Stc.Task.Context
   alias Stc.Task.Result
   alias Stc.Task.Spec
-  alias Stc.Task.Context
 
   @callback start(spec :: Spec.t(), context :: Context.t()) ::
               {:ok, Result.t()} | {:started, handle :: any()} | {:error, reason :: any()}

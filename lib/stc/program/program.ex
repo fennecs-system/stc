@@ -3,15 +3,16 @@ defmodule Stc.Program do
   A program is a sequence of operations to be executed by the Stc
   """
 
-  alias Stc.Op
   import Stc.Free
+
+  alias Stc.Op
 
   def run(module, payload, task_id \\ nil, opts \\ [])
 
   def run(module, payload, nil, opts) do
     {:free,
      %Op.Run{
-       task_id: Ecto.UUID.generate() |> dbg(),
+       task_id: Ecto.UUID.generate(),
        module: module,
        payload: payload,
        # map opts to fields

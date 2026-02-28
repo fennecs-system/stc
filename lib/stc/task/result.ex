@@ -10,15 +10,15 @@ defmodule Stc.Task.Result do
   """
 
   @type t :: %__MODULE__{
-          result: any(),
+          value: any(),
           _meta: map()
         }
 
-  defstruct [:result, _meta: %{}]
+  defstruct [:value, _meta: %{}]
 
   @doc "Wraps `value` in a Result with optional metadata."
   @spec to_result(any(), map()) :: t()
   def to_result(value, meta \\ %{}) do
-    %__MODULE__{result: value, _meta: meta}
+    %__MODULE__{value: value, _meta: meta}
   end
 end

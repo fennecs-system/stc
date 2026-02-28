@@ -6,6 +6,6 @@ defmodule Stc.Task.TestAddTask do
 
   @impl true
   def start(%{payload: %{a: a, b: b}}, _context \\ []) do
-    {:ok, %Result{result: a + b}}
+    {:ok, %Result{value: a + b}}
   end
 end

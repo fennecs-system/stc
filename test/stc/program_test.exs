@@ -1,11 +1,11 @@
 defmodule Stc.ProgramTest do
   use ExUnit.Case
 
+  import Stc.Free
+
   alias Stc.Interpreter
   alias Stc.Program
   alias Stc.Task.TestAddTask
-
-  import Stc.Free
 
   setup do
     start_supervised!(Stc.Backend.Memory.EventLog)

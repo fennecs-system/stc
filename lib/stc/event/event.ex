@@ -29,8 +29,8 @@ defmodule Stc.Event do
             task_id: String.t(),
             agent_ids: [String.t()] | nil,
             result: Result.t(),
-            attempt: pos_integer(),
-            timestamp: DateTime.t()
+            attempt: pos_integer() | nil,
+            timestamp: DateTime.t() | nil
           }
 
     defstruct [:workflow_id, :task_id, :agent_ids, :result, :attempt, :timestamp]

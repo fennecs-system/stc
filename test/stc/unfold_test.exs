@@ -1,16 +1,16 @@
 defmodule Stc.UnfoldTest do
   use ExUnit.Case
 
+  import Stc.Free
+
+  alias Stc.Event.Store
   alias Stc.Interpreter
   alias Stc.Interpreter.Distributed
-  alias Stc.Event.Store
   alias Stc.Program
   alias Stc.Program.Store, as: ProgramStore
   alias Stc.Scheduler
   alias Stc.Scheduler.Algorithm.LocalTestAlgorithm
   alias Stc.Task.TestAddTask
-
-  import Stc.Free
 
   describe "local" do
     setup do
@@ -84,18 +84,20 @@ defmodule Stc.UnfoldTest do
 
     defp assert_eventually(fun, timeout_ms \\ 10_000, interval_ms \\ 100) do
       deadline = System.monotonic_time(:millisecond) + timeout_ms
+      do_assert_eventually(fun, deadline, interval_ms)
+    end
 
-      Stream.repeatedly(fn -> fun.() end)
-      |> Stream.each(fn result ->
-        unless result do
-          if System.monotonic_time(:millisecond) >= deadline do
-            flunk("assert_eventually timed out")
-          end
-
+    defp do_assert_eventually(fun, deadline, interval_ms) do
+      if fun.() do
+        :ok
+      else
+        if System.monotonic_time(:millisecond) >= deadline do
+          flunk("assert_eventually timed out")
+        else
           Process.sleep(interval_ms)
+          do_assert_eventually(fun, deadline, interval_ms)
         end
-      end)
-      |> Enum.find(& &1)
+      end
     end
 
     test "runs steps sequentially and reaches pure terminal state" do
@@ -116,7 +118,7 @@ defmodule Stc.UnfoldTest do
       # Exactly 3 tasks completed — one per step, in sequence.
       {:ok, completed, _} = Store.fetch(Store.origin(), types: [Stc.Event.Completed])
       assert length(completed) == 3
-      assert Enum.map(completed, & &1.result.result) |> Enum.sort() == [1, 2, 3]
+      assert Enum.map(completed, & &1.result.value) |> Enum.sort() == [1, 2, 3]
     end
 
     test "only one step is in-flight at a time" do

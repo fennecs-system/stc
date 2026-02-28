@@ -38,7 +38,7 @@ defmodule Stc.Backend.Postgres.EventLog do
 
   @impl Stc.Backend.EventLog
   @spec origin() :: 0
-  def origin(), do: 0
+  def origin, do: 0
 
   @impl Stc.Backend.EventLog
   @spec append(struct()) :: {:ok, pos_integer()} | {:error, term()}

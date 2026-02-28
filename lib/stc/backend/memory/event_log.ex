@@ -50,7 +50,7 @@ defmodule Stc.Backend.Memory.EventLog do
 
   @impl Stc.Backend.EventLog
   @spec origin() :: non_neg_integer()
-  def origin(), do: 0
+  def origin, do: 0
 
   @impl Stc.Backend.EventLog
   @spec append(struct()) :: {:ok, pos_integer()} | {:error, term()}

@@ -1,25 +1,27 @@
 defmodule Stc.PostgresProgramTest do
   use ExUnit.Case, async: false
 
+  import Stc.Free
+
+  alias Ecto.Adapters.SQL.Sandbox
+  alias Stc.Backend.Memory
+  alias Stc.Backend.Postgres
   alias Stc.Interpreter
   alias Stc.Program
   alias Stc.Task.TestAddTask
-
-  import Stc.Free
+  alias Stc.Test.Repo
 
   setup do
-    Application.put_env(:stc, :event_log, {Stc.Backend.Postgres.EventLog, repo: Stc.Test.Repo})
-    Application.put_env(:stc, :kv, {Stc.Backend.Postgres.KV, repo: Stc.Test.Repo})
+    Application.put_env(:stc, :event_log, {Postgres.EventLog, repo: Repo})
+    Application.put_env(:stc, :kv, {Postgres.KV, repo: Repo})
 
     on_exit(fn ->
-      Application.put_env(:stc, :event_log, {Stc.Backend.Memory.EventLog, []})
-      Application.put_env(:stc, :kv, {Stc.Backend.Memory.KV, []})
+      Application.put_env(:stc, :event_log, {Memory.EventLog, []})
+      Application.put_env(:stc, :kv, {Memory.KV, []})
     end)
 
-    :ok = Ecto.Adapters.SQL.Sandbox.checkout(Stc.Test.Repo)
-
-    # shared mode so Task.async workers spawned by the parallel interpreter can use the same connection
-    Ecto.Adapters.SQL.Sandbox.mode(Stc.Test.Repo, {:shared, self()})
+    :ok = Sandbox.checkout(Repo)
+    Sandbox.mode(Repo, {:shared, self()})
 
     :ok
   end

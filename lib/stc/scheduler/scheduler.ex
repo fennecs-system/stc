@@ -26,13 +26,13 @@ defmodule Stc.Scheduler do
 
   use GenServer
 
-  require Logger
-
   alias Stc.Event.Store
-  alias Stc.Scheduler.Executor
-  alias Stc.Task.Spec
   alias Stc.ReplyBuffer
+  alias Stc.Scheduler.Executor
   alias Stc.Scheduler.State
+  alias Stc.Task.Spec
+
+  require Logger
 
   @doc false
   def via(id) do
@@ -53,7 +53,8 @@ defmodule Stc.Scheduler do
   @doc "Returns [{id, pid}] for all running schedulers visible in the Horde registry."
   @spec list() :: [{String.t(), pid()}]
   def list do
-    Horde.Registry.select(Stc.SchedulerRegistry, [{{:"$1", :"$2", :"$3"}, [], [{{:"$1", :"$2"}}]}])
+    Stc.SchedulerRegistry
+    |> Horde.Registry.select([{{:"$1", :"$2", :"$3"}, [], [{{:"$1", :"$2"}}]}])
     |> Enum.flat_map(fn
       {"scheduler_" <> id, pid} -> [{id, pid}]
       _ -> []
@@ -204,7 +205,7 @@ defmodule Stc.Scheduler do
 
   @spec buffer_pending(State.t(), Stc.Event.Ready.t()) :: State.t()
   defp buffer_pending(%State{pending_ready: pending} = state, %Stc.Event.Ready{} = event) do
-    %State{state | pending_ready: pending ++ [event]}
+    %State{state | pending_ready: [event | pending]}
   end
 
   @spec try_acquire_lock(String.t(), State.t()) :: {:ok, State.t()} | {:error, :locked}

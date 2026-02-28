@@ -7,17 +7,17 @@ defmodule Stc.TaskResultTest do
   property "to_result/1 preserves the result value for any term" do
     check all(value <- term()) do
       wrapped = Result.to_result(value)
-      assert wrapped.result == value
+      assert wrapped.value == value
     end
   end
 
-  property "wrap/2 stores meta as-is" do
+  property "to_result/2 stores meta" do
     check all(
             value <- term(),
             meta <- map_of(atom(:alphanumeric), term())
           ) do
       wrapped = Result.to_result(value, meta)
-      assert wrapped.result == value
+      assert wrapped.value == value
       assert wrapped._meta == meta
     end
   end
@@ -48,8 +48,8 @@ defmodule Stc.TaskResultTest do
     defmodule ResumableTask do
       @behaviour Stc.Task
       alias Stc.Task.Result
-      def start(_, _), do: {:ok, %Result{result: :started}}
-      def resume(_, _handle, _), do: {:ok, %Result{result: :resumed}}
+      def start(_, _), do: {:ok, %Result{value: :started}}
+      def resume(_, _handle, _), do: {:ok, %Result{value: :resumed}}
     end
 
     assert dispatch_mode(ResumableTask, "some-handle") == :resume
@@ -63,8 +63,8 @@ defmodule Stc.TaskResultTest do
     defmodule ResumableTask2 do
       @behaviour Stc.Task
       alias Stc.Task.Result
-      def start(_, _), do: {:ok, %Result{result: :started}}
-      def resume(_, _handle, _), do: {:ok, %Result{result: :resumed}}
+      def start(_, _), do: {:ok, %Result{value: :started}}
+      def resume(_, _handle, _), do: {:ok, %Result{value: :resumed}}
     end
 
     assert dispatch_mode(ResumableTask2, nil) == :start
@@ -78,8 +78,8 @@ defmodule Stc.TaskResultTest do
     defmodule ResumableTask3 do
       @behaviour Stc.Task
       alias Stc.Task.Result
-      def start(_, _), do: {:ok, %Result{result: :ok}}
-      def resume(_, _handle, _), do: {:ok, %Result{result: :resumed}}
+      def start(_, _), do: {:ok, %Result{value: :ok}}
+      def resume(_, _handle, _), do: {:ok, %Result{value: :resumed}}
     end
 
     assert Stc.Task.resumable?(ResumableTask3)

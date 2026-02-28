@@ -6,9 +6,9 @@ defmodule Stc.Interpreter do
   alias Stc.Event
   alias Stc.Event.Store
   alias Stc.Op
+  alias Stc.Program.Store, as: ProgramStore
   alias Stc.Task.Result
   alias Stc.Task.Spec
-  alias Stc.Program.Store, as: ProgramStore
 
   def local(program, context) do
     interpret_local(program, context)
@@ -34,7 +34,7 @@ defmodule Stc.Interpreter do
     })
 
     case mod.start(task_spec, exec_context) do
-      {:ok, %Result{result: result}} ->
+      {:ok, %Result{value: result}} ->
         interpret_local(cont_fn.(result), context)
 
       {:ok, result} ->
@@ -73,7 +73,7 @@ defmodule Stc.Interpreter do
     results =
       programs
       |> Enum.map(fn p -> Task.async(fn -> interpret_local(p, context) end) end)
-      |> Enum.map(&Task.await/1)
+      |> Task.await_many()
 
     case Enum.find(results, fn {status, _} -> status == :error end) do
       {:error, reason} ->

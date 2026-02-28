@@ -1,4 +1,7 @@
 defmodule Stc do
+  defdelegate child_spec(opts), to: Stc.Supervisor
+  defdelegate start_link(opts), to: Stc.Supervisor
+
   @moduledoc """
   A generic scheduler for all operations on strong compute
 
