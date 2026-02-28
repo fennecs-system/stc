@@ -11,3 +11,5 @@
 - task dependency splicing? suppose workflow A and workflow B have a task that downloads something X. Suppose A is downloading X currently - then B needs to add it as a dependency and somehow splice in that requirement. Perhaps theres a /hash/ of tasks or something? it would be the exact same task even if its part of different workflows. get tasks by hash?
 
 - tracing back cleanup - eg suppose the workflow is download => start container => stop => start => delete. We can walk back all the .clean steps on each task.
+
+- who initiates cleanup tasks? lookup via horde - cancel it.
