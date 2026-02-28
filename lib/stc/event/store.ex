@@ -39,6 +39,10 @@ defmodule Stc.Event.Store do
   @spec release_lock(String.t(), term()) :: :ok | {:error, term()}
   def release_lock(task_id, lock), do: backend().release_lock(task_id, lock)
 
+  @doc "Releases all locks held by `caller_id` (stale lock cleanup on boot)."
+  @spec release_locks_by_caller(term()) :: :ok
+  def release_locks_by_caller(caller_id), do: backend().release_locks_by_caller(caller_id)
+
   # ---------------------------------------------------------------------------
   # Private helpers
   # ---------------------------------------------------------------------------

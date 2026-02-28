@@ -12,10 +12,6 @@ defmodule Stc.UnfoldTest do
 
   import Stc.Free
 
-  # ---------------------------------------------------------------------------
-  # Local interpreter tests
-  # ---------------------------------------------------------------------------
-
   describe "local" do
     setup do
       start_supervised!(Stc.Backend.Memory.EventLog)
@@ -59,10 +55,6 @@ defmodule Stc.UnfoldTest do
       assert {:ok, 6} = Interpreter.local(program, %{})
     end
   end
-
-  # ---------------------------------------------------------------------------
-  # Distributed interpreter tests
-  # ---------------------------------------------------------------------------
 
   describe "distributed" do
     setup do
@@ -124,7 +116,7 @@ defmodule Stc.UnfoldTest do
       # Exactly 3 tasks completed — one per step, in sequence.
       {:ok, completed, _} = Store.fetch(Store.origin(), types: [Stc.Event.Completed])
       assert length(completed) == 3
-      assert Enum.map(completed, & &1.result) |> Enum.sort() == [1, 2, 3]
+      assert Enum.map(completed, & &1.result.result) |> Enum.sort() == [1, 2, 3]
     end
 
     test "only one step is in-flight at a time" do

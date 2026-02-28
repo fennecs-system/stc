@@ -17,6 +17,7 @@ defmodule Stc.PostgresProgramTest do
     end)
 
     :ok = Ecto.Adapters.SQL.Sandbox.checkout(Stc.Test.Repo)
+
     # shared mode so Task.async workers spawned by the parallel interpreter can use the same connection
     Ecto.Adapters.SQL.Sandbox.mode(Stc.Test.Repo, {:shared, self()})
 

@@ -37,6 +37,7 @@ defmodule Stc.MixProject do
       # {:dep_from_git, git: "https://github.com/elixir-lang/my_dep.git", tag: "0.1.0"}
 
       # dev
+      {:stream_data, "~> 1.1", only: [:test]},
       {:credo, "~> 1.7.7", only: [:dev, :test, :sandbox], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test, :sandbox], runtime: false}
     ]

@@ -6,6 +6,7 @@ defmodule Stc.Interpreter do
   alias Stc.Event
   alias Stc.Event.Store
   alias Stc.Op
+  alias Stc.Task.Result
   alias Stc.Task.Spec
   alias Stc.Program.Store, as: ProgramStore
 
@@ -33,6 +34,9 @@ defmodule Stc.Interpreter do
     })
 
     case mod.start(task_spec, exec_context) do
+      {:ok, %Result{result: result}} ->
+        interpret_local(cont_fn.(result), context)
+
       {:ok, result} ->
         interpret_local(cont_fn.(result), context)
 

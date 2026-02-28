@@ -21,6 +21,18 @@ defmodule Stc.Event do
 
   defmodule Completed do
     @moduledoc false
+
+    alias Stc.Task.Result
+
+    @type t :: %__MODULE__{
+            workflow_id: String.t(),
+            task_id: String.t(),
+            agent_ids: [String.t()] | nil,
+            result: Result.t(),
+            attempt: pos_integer(),
+            timestamp: DateTime.t()
+          }
+
     defstruct [:workflow_id, :task_id, :agent_ids, :result, :attempt, :timestamp]
   end
 

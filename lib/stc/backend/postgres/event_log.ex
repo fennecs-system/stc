@@ -36,10 +36,6 @@ defmodule Stc.Backend.Postgres.EventLog do
 
   @type cursor :: non_neg_integer()
 
-  # ---------------------------------------------------------------------------
-  # Public API
-  # ---------------------------------------------------------------------------
-
   @impl Stc.Backend.EventLog
   @spec origin() :: 0
   def origin(), do: 0
@@ -66,11 +62,15 @@ defmodule Stc.Backend.Postgres.EventLog do
   def fetch(cursor, opts \\ []) do
     types = Keyword.get(opts, :types, :all)
     limit = Keyword.get(opts, :limit, 100)
+    task_id = Keyword.get(opts, :task_id, :any)
+    workflow_id = Keyword.get(opts, :workflow_id, :any)
 
     records =
       EventRecord
       |> where([e], e.id > ^cursor)
       |> apply_type_filter(types)
+      |> apply_field_filter(:task_id, task_id)
+      |> apply_field_filter(:workflow_id, workflow_id)
       |> order_by([e], asc: e.id)
       |> limit(^limit)
       |> repo().all()
@@ -133,14 +133,18 @@ defmodule Stc.Backend.Postgres.EventLog do
     if count > 0, do: :ok, else: {:error, :not_owner}
   end
 
-  # ---------------------------------------------------------------------------
-  # Private helpers
-  # ---------------------------------------------------------------------------
-
   @spec repo() :: module()
   defp repo do
     {_mod, opts} = Application.fetch_env!(:stc, :event_log)
     Keyword.fetch!(opts, :repo)
+  end
+
+  @impl Stc.Backend.EventLog
+  @spec release_locks_by_caller(term()) :: :ok
+  def release_locks_by_caller(caller_id) do
+    caller_str = inspect(caller_id)
+    repo().delete_all(from(l in "stc_locks", where: l.caller_id == ^caller_str))
+    :ok
   end
 
   @spec apply_type_filter(Ecto.Query.t(), :all | [module()]) :: Ecto.Query.t()
@@ -150,6 +154,15 @@ defmodule Stc.Backend.Postgres.EventLog do
     type_strings = Enum.map(types, &Atom.to_string/1)
     where(query, [e], e.type in ^type_strings)
   end
+
+  @spec apply_field_filter(Ecto.Query.t(), atom(), :any | term()) :: Ecto.Query.t()
+  defp apply_field_filter(query, _field, :any), do: query
+
+  defp apply_field_filter(query, :task_id, value),
+    do: where(query, [e], e.task_id == ^value)
+
+  defp apply_field_filter(query, :workflow_id, value),
+    do: where(query, [e], e.workflow_id == ^value)
 
   @spec deserialise_record(EventRecord.t()) :: struct()
   defp deserialise_record(%EventRecord{payload: payload}) do

@@ -35,6 +35,8 @@ defmodule Stc.Backend.EventLog do
   @type fetch_opt ::
           {:types, [module()]}
           | {:limit, pos_integer()}
+          | {:task_id, String.t()}
+          | {:workflow_id, String.t()}
 
   @doc """
   Returns the cursor position before any events.
@@ -88,4 +90,12 @@ defmodule Stc.Backend.EventLog do
   """
   @callback release_lock(task_id :: String.t(), lock :: term()) ::
               :ok | {:error, :not_owner | term()}
+
+  @doc """
+  Releases all locks held by `caller_id`.
+
+  Called on scheduler boot to clear stale locks left behind by a previous
+  incarnation of this scheduler that crashed before releasing them.
+  """
+  @callback release_locks_by_caller(caller_id :: term()) :: :ok
 end

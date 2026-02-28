@@ -85,7 +85,7 @@ defmodule Stc.SchedulerTest do
 
     assert {:ok, {:pure, 5}} = ProgramStore.get("test_workflow_1")
 
-    results_by_task = Map.new(all_completed(), fn e -> {e.task_id, e.result} end)
+    results_by_task = Map.new(all_completed(), fn e -> {e.task_id, e.result.result} end)
 
     assert results_by_task[:add1] == 2
     assert results_by_task[:add2] == 2
@@ -112,7 +112,7 @@ defmodule Stc.SchedulerTest do
     # Wait for at least 3 iterations to complete.
     assert_eventually(fn -> length(all_completed()) >= 3 end)
 
-    results = all_completed() |> Enum.map(& &1.result) |> Enum.sort()
+    results = all_completed() |> Enum.map(& &1.result.result) |> Enum.sort()
 
     assert 2 in results
     assert 3 in results

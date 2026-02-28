@@ -33,6 +33,7 @@ defmodule Stc.Interpreter.Distributed do
   alias Stc.Event.Store
   alias Stc.Program.Store, as: ProgramStore
   alias Stc.Op
+  alias Stc.Task.Result
 
   @poll_interval_ms 250
 
@@ -66,8 +67,15 @@ defmodule Stc.Interpreter.Distributed do
   defp handle_completed(%Stc.Event.Completed{
          workflow_id: wf_id,
          task_id: task_id,
-         result: result
+         result: raw_result
        }) do
+    # Tasks return %Result{} structs; unwrap so continuations receive plain values.
+    result =
+      case raw_result do
+        %Result{result: r} -> r
+        r -> r
+      end
+
     case ProgramStore.get(wf_id) do
       {:ok, program} ->
         {next_program, ready_tasks} = next(program, task_id, result, wf_id)

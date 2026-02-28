@@ -77,9 +77,11 @@ defmodule Stc.Backend.Memory.EventLog do
     GenServer.call(__MODULE__, {:release_lock, task_id, lock})
   end
 
-  # ---------------------------------------------------------------------------
-  # GenServer callbacks
-  # ---------------------------------------------------------------------------
+  @impl Stc.Backend.EventLog
+  @spec release_locks_by_caller(term()) :: :ok
+  def release_locks_by_caller(caller_id) do
+    GenServer.call(__MODULE__, {:release_locks_by_caller, caller_id})
+  end
 
   @impl true
   def init(%State{} = state) do
@@ -97,11 +99,15 @@ defmodule Stc.Backend.Memory.EventLog do
   def handle_call({:fetch, cursor, opts}, _from, %State{events: events} = state) do
     types = Keyword.get(opts, :types, :all)
     limit = Keyword.get(opts, :limit, 100)
+    task_id = Keyword.get(opts, :task_id, :any)
+    workflow_id = Keyword.get(opts, :workflow_id, :any)
 
     result =
       events
       |> Stream.filter(fn {seq, _event} -> seq > cursor end)
       |> Stream.filter(fn {_seq, event} -> type_matches?(event, types) end)
+      |> Stream.filter(fn {_seq, event} -> field_matches?(event, :task_id, task_id) end)
+      |> Stream.filter(fn {_seq, event} -> field_matches?(event, :workflow_id, workflow_id) end)
       |> Enum.sort_by(fn {seq, _event} -> seq end)
       |> Enum.take(limit)
 
@@ -151,11 +157,17 @@ defmodule Stc.Backend.Memory.EventLog do
     end
   end
 
-  # ---------------------------------------------------------------------------
-  # Private helpers
-  # ---------------------------------------------------------------------------
+  @impl true
+  def handle_call({:release_locks_by_caller, caller_id}, _from, %State{locks: locks} = state) do
+    new_locks = Map.reject(locks, fn {_task_id, {_lock, cid}} -> cid == caller_id end)
+    {:reply, :ok, %State{state | locks: new_locks}}
+  end
 
   @spec type_matches?(struct(), :all | [module()]) :: boolean()
   defp type_matches?(_event, :all), do: true
   defp type_matches?(event, types), do: Enum.any?(types, &is_struct(event, &1))
+
+  @spec field_matches?(struct(), atom(), :any | term()) :: boolean()
+  defp field_matches?(_event, _field, :any), do: true
+  defp field_matches?(event, field, value), do: Map.get(event, field) == value
 end

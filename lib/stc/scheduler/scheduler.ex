@@ -71,6 +71,11 @@ defmodule Stc.Scheduler do
   @impl true
   def init(opts) do
     id = Keyword.fetch!(opts, :id)
+
+    # On boot any lock we held in a previous incarnation is stale — we have no
+    # active executors yet so no task can legitimately own a lock under our id.
+    Store.release_locks_by_caller(id)
+
     {:ok, reply_buffer_pid} = ReplyBuffer.start_link(scheduler_id: id)
 
     state = %State{

@@ -72,7 +72,9 @@ defmodule Stc.Scheduler.Executor do
   alias Stc.Event.Store
   alias Stc.ReplyBuffer
   alias Stc.Scheduler.Executor.State
+  alias Stc.Task
   alias Stc.Task.Context
+  alias Stc.Task.Result
   alias Stc.Task.Spec
 
   # api
@@ -94,11 +96,46 @@ defmodule Stc.Scheduler.Executor do
 
   @impl true
   def handle_continue(:start, %State{} = state) do
-    %Context{} = context = to_context(state)
+    context = to_context(state)
 
+    case find_stale_handle(state.task_id, state.workflow_id) do
+      {:ok, handle} -> dispatch_resume(state, handle, context)
+      :not_found -> dispatch_start(state, context)
+    end
+  end
+
+  # Resume a task that was started/running before a crash.
+  @spec dispatch_resume(State.t(), term(), Context.t()) ::
+          {:noreply, State.t()} | {:stop, :normal, State.t()}
+  defp dispatch_resume(%State{} = state, handle, context) do
+    if Task.resumable?(state.task_spec.module) do
+      case state.task_spec.module.resume(state.task_spec, handle, context) do
+        {:ok, task_result} ->
+          emit_completion(state, task_result)
+          {:stop, :normal, state}
+
+        {:started, new_handle} ->
+          state = maybe_spawn_timeouts(state)
+          ReplyBuffer.register_executor(state.reply_buffer, state.task_id, self())
+          emit_started(state, new_handle)
+          {:noreply, state}
+
+        {:error, reason} ->
+          handle_failure(state, reason, context)
+      end
+    else
+      # No resume: clean up previous attempt then start fresh.
+      Task.clean(state.task_spec.module, state.task_spec, context)
+      dispatch_start(state, context)
+    end
+  end
+
+  @spec dispatch_start(State.t(), Context.t()) ::
+          {:noreply, State.t()} | {:stop, :normal, State.t()}
+  defp dispatch_start(%State{} = state, context) do
     case state.task_spec.module.start(state.task_spec, context) do
-      {:ok, result} ->
-        emit_completion(state, result)
+      {:ok, task_result} ->
+        emit_completion(state, task_result)
         {:stop, :normal, state}
 
       {:started, handle} ->
@@ -109,6 +146,23 @@ defmodule Stc.Scheduler.Executor do
 
       {:error, reason} ->
         handle_failure(state, reason, context)
+    end
+  end
+
+  # Returns {:ok, handle} when this task has a Started event with no matching
+  # Completed — i.e. it was starting or running when the previous executor died.
+  @spec find_stale_handle(String.t(), String.t()) :: {:ok, term()} | :not_found
+  defp find_stale_handle(task_id, workflow_id) do
+    opts = [task_id: task_id, workflow_id: workflow_id]
+
+    {:ok, started, _} = Store.fetch(Store.origin(), [{:types, [Stc.Event.Started]} | opts])
+    {:ok, completed, _} = Store.fetch(Store.origin(), [{:types, [Stc.Event.Completed]} | opts])
+
+    if started != [] and completed == [] do
+      handle = started |> List.last() |> Map.get(:async_handle)
+      if handle != nil, do: {:ok, handle}, else: :not_found
+    else
+      :not_found
     end
   end
 
@@ -127,7 +181,8 @@ defmodule Stc.Scheduler.Executor do
         {:reply, task_id, _agent_id, {:result, result}},
         %State{task_id: task_id} = state
       ) do
-    emit_completion(state, result)
+    # Agents send raw values; wrap here since they don't construct Result structs.
+    emit_completion(state, Result.to_result(result))
     {:stop, :normal, state}
   end
 

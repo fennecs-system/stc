@@ -22,9 +22,9 @@ defmodule Stc.Scheduler.Algorithm do
 
   alias Stc.Scheduler.State
 
-  # ---------------------------------------------------------------------------
-  # Required callbacks
-  # ---------------------------------------------------------------------------
+  #
+  # Required callbacks -
+  #
 
   @doc "Refreshes the agent pool in state (e.g. from a registry or external API)."
   @callback refresh_agent_pool(state :: State.t()) :: State.t()
@@ -42,9 +42,9 @@ defmodule Stc.Scheduler.Algorithm do
   @doc "Processes any buffered agent replies. Default: no-op."
   @callback process_agent_buffer(state :: State.t()) :: State.t()
 
-  # ---------------------------------------------------------------------------
-  # Optional callbacks (defaults provided via __using__)
-  # ---------------------------------------------------------------------------
+  #
+  # Optional callbacks
+  #
 
   @doc """
   Returns `true` if `agent` satisfies the requirements of `event`.
@@ -75,10 +75,6 @@ defmodule Stc.Scheduler.Algorithm do
     can_oversubscribe?: 3,
     reconcile_stale_agents: 1
   ]
-
-  # ---------------------------------------------------------------------------
-  # Default implementations
-  # ---------------------------------------------------------------------------
 
   defmacro __using__(_opts) do
     quote do
