@@ -34,18 +34,41 @@ defmodule Stc.Scheduler do
   alias Stc.ReplyBuffer
   alias Stc.Scheduler.State
 
-  @spec via(String.t()) :: {:via, module(), {module(), String.t()}}
+  @doc false
   def via(id) do
     {:via, Horde.Registry, {Stc.SchedulerRegistry, "scheduler_#{id}"}}
   end
 
-  @spec start_link(keyword()) :: GenServer.on_start()
+  @doc "Returns the current state of the scheduler with the given id, or nil if not found."
+  @spec get_state(String.t()) :: State.t() | nil
+  def get_state(id) do
+    case Horde.Registry.lookup(Stc.SchedulerRegistry, "scheduler_#{id}") do
+      [{pid, _}] -> :sys.get_state(pid, 5_000)
+      [] -> nil
+    end
+  rescue
+    _ -> nil
+  end
+
+  @doc "Returns [{id, pid}] for all running schedulers visible in the Horde registry."
+  @spec list() :: [{String.t(), pid()}]
+  def list do
+    Horde.Registry.select(Stc.SchedulerRegistry, [{{:"$1", :"$2", :"$3"}, [], [{{:"$1", :"$2"}}]}])
+    |> Enum.flat_map(fn
+      {"scheduler_" <> id, pid} -> [{id, pid}]
+      _ -> []
+    end)
+  rescue
+    _ -> []
+  end
+
+  @doc false
   def start_link(opts) do
     id = Keyword.fetch!(opts, :id)
     GenServer.start_link(__MODULE__, opts, name: via(id))
   end
 
-  @impl GenServer
+  @impl true
   def init(opts) do
     id = Keyword.fetch!(opts, :id)
     {:ok, reply_buffer_pid} = ReplyBuffer.start_link(scheduler_id: id)
@@ -68,7 +91,7 @@ defmodule Stc.Scheduler do
     {:ok, schedule_event_loop(state)}
   end
 
-  @impl GenServer
+  @impl true
   def handle_info(:event_loop, %State{} = state) do
     state =
       state

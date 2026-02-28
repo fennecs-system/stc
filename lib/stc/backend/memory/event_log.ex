@@ -1,3 +1,17 @@
+defmodule Stc.Backend.Memory.EventLog.State do
+  @moduledoc false
+
+  @type lock :: {lock_id :: term(), caller_id :: term()}
+
+  @type t :: %__MODULE__{
+          seq: non_neg_integer(),
+          events: %{non_neg_integer() => struct()},
+          locks: %{String.t() => lock()}
+        }
+
+  defstruct seq: 0, events: %{}, locks: %{}
+end
+
 defmodule Stc.Backend.Memory.EventLog do
   @moduledoc """
   In-memory implementation of `Stc.Backend.EventLog`.
@@ -25,31 +39,10 @@ defmodule Stc.Backend.Memory.EventLog do
 
   use GenServer
 
+  alias Stc.Backend.Memory.EventLog.State
   require Logger
 
-  # ---------------------------------------------------------------------------
-  # Internal state
-  # ---------------------------------------------------------------------------
-
-  defmodule State do
-    @moduledoc false
-
-    @type lock :: {lock_id :: term(), caller_id :: term()}
-
-    @type t :: %__MODULE__{
-            seq: non_neg_integer(),
-            events: %{non_neg_integer() => struct()},
-            locks: %{String.t() => lock()}
-          }
-
-    defstruct seq: 0, events: %{}, locks: %{}
-  end
-
-  # ---------------------------------------------------------------------------
-  # Public API
-  # ---------------------------------------------------------------------------
-
-  @spec start_link(keyword()) :: GenServer.on_start()
+  @doc false
   def start_link(opts \\ []) do
     name = Keyword.get(opts, :name, __MODULE__)
     GenServer.start_link(__MODULE__, %State{}, name: name)
@@ -88,19 +81,19 @@ defmodule Stc.Backend.Memory.EventLog do
   # GenServer callbacks
   # ---------------------------------------------------------------------------
 
-  @impl GenServer
+  @impl true
   def init(%State{} = state) do
     {:ok, state}
   end
 
-  @impl GenServer
+  @impl true
   def handle_call({:append, event}, _from, %State{seq: seq, events: events} = state) do
     new_seq = seq + 1
     new_state = %State{state | seq: new_seq, events: Map.put(events, new_seq, event)}
     {:reply, {:ok, new_seq}, new_state}
   end
 
-  @impl GenServer
+  @impl true
   def handle_call({:fetch, cursor, opts}, _from, %State{events: events} = state) do
     types = Keyword.get(opts, :types, :all)
     limit = Keyword.get(opts, :limit, 100)
@@ -123,7 +116,7 @@ defmodule Stc.Backend.Memory.EventLog do
     end
   end
 
-  @impl GenServer
+  @impl true
   def handle_call(
         {:try_lock, task_id, lock, caller_id},
         _from,
@@ -143,7 +136,7 @@ defmodule Stc.Backend.Memory.EventLog do
     end
   end
 
-  @impl GenServer
+  @impl true
   def handle_call({:release_lock, task_id, lock}, _from, %State{locks: locks} = state) do
     case Map.get(locks, task_id) do
       {^lock, _caller_id} ->

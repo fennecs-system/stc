@@ -1,3 +1,21 @@
+defmodule Stc.ReplyBuffer.State do
+  @moduledoc false
+  defstruct scheduler_id: nil, buffer: %{}, executors: %{}
+
+  @type entry :: %{
+          task_id: String.t(),
+          agent_id: String.t(),
+          message: term(),
+          timestamp: DateTime.t()
+        }
+
+  @type t :: %__MODULE__{
+          scheduler_id: String.t(),
+          buffer: %{String.t() => [entry()]},
+          executors: %{String.t() => pid()}
+        }
+end
+
 defmodule Stc.ReplyBuffer do
   @moduledoc """
   Per-scheduler buffer for messages arriving from agents.
@@ -24,35 +42,9 @@ defmodule Stc.ReplyBuffer do
   """
 
   use GenServer
+  alias Stc.ReplyBuffer.State
 
-  # ---------------------------------------------------------------------------
-  # Internal state
-  # ---------------------------------------------------------------------------
-
-  defmodule State do
-    @moduledoc false
-
-    @type entry :: %{
-            task_id: String.t(),
-            agent_id: String.t(),
-            message: term(),
-            timestamp: DateTime.t()
-          }
-
-    @type t :: %__MODULE__{
-            scheduler_id: String.t(),
-            buffer: %{String.t() => [entry()]},
-            executors: %{String.t() => pid()}
-          }
-
-    defstruct scheduler_id: nil, buffer: %{}, executors: %{}
-  end
-
-  # ---------------------------------------------------------------------------
-  # Public API
-  # ---------------------------------------------------------------------------
-
-  @spec start_link(keyword()) :: GenServer.on_start()
+  @doc false
   def start_link(opts) do
     scheduler_id = Keyword.fetch!(opts, :scheduler_id)
     GenServer.start_link(__MODULE__, opts, name: via(scheduler_id))
@@ -93,22 +85,18 @@ defmodule Stc.ReplyBuffer do
     GenServer.call(pid, {:add_message, task_id, agent_id, message})
   end
 
-  @spec via(String.t()) :: {:via, module(), {module(), String.t()}}
+  @doc false
   def via(scheduler_id) do
     {:via, Horde.Registry, {Stc.SchedulerRegistry, "scheduler_reply_buffer_#{scheduler_id}"}}
   end
 
-  # ---------------------------------------------------------------------------
-  # GenServer callbacks
-  # ---------------------------------------------------------------------------
-
-  @impl GenServer
+  @impl true
   def init(opts) do
     scheduler_id = Keyword.fetch!(opts, :scheduler_id)
     {:ok, %State{scheduler_id: scheduler_id}}
   end
 
-  @impl GenServer
+  @impl true
   def handle_call(
         {:register_executor, task_id, executor_pid},
         _from,
@@ -117,7 +105,7 @@ defmodule Stc.ReplyBuffer do
     {:reply, :ok, %State{state | executors: Map.put(executors, task_id, executor_pid)}}
   end
 
-  @impl GenServer
+  @impl true
   def handle_call(
         {:add_message, task_id, agent_id, message},
         _from,

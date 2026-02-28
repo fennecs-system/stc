@@ -22,10 +22,6 @@ defmodule Stc.Backend.Postgres.KV do
 
   alias Stc.Backend.Postgres.KVRecord
 
-  # ---------------------------------------------------------------------------
-  # Public API
-  # ---------------------------------------------------------------------------
-
   @impl Stc.Backend.KV
   @spec put(String.t(), binary()) :: :ok | {:error, term()}
   def put(key, value) when is_binary(key) and is_binary(value) do
@@ -60,9 +56,14 @@ defmodule Stc.Backend.Postgres.KV do
     :ok
   end
 
-  # ---------------------------------------------------------------------------
-  # Private helpers
-  # ---------------------------------------------------------------------------
+  @impl Stc.Backend.KV
+  @spec list_keys() :: {:ok, [String.t()]} | {:error, term()}
+  def list_keys do
+    keys = repo().all(from(r in KVRecord, select: r.key))
+    {:ok, keys}
+  rescue
+    e -> {:error, e}
+  end
 
   @spec repo() :: module()
   defp repo do

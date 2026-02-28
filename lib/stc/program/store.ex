@@ -36,6 +36,12 @@ defmodule Stc.Program.Store do
     backend().delete(workflow_id)
   end
 
+  @doc "Returns all workflow IDs that currently have stored program state."
+  @spec list_workflow_ids() :: {:ok, [String.t()]} | {:error, term()}
+  def list_workflow_ids do
+    backend().list_keys()
+  end
+
   # ---------------------------------------------------------------------------
   # Private helpers
   # ---------------------------------------------------------------------------

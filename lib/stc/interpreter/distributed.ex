@@ -1,3 +1,13 @@
+defmodule Stc.Interpreter.Distributed.State do
+  @moduledoc false
+
+  @type t :: %__MODULE__{
+          cursor: Stc.Backend.EventLog.cursor()
+        }
+
+  defstruct [:cursor]
+end
+
 defmodule Stc.Interpreter.Distributed do
   @moduledoc """
   A GenServer that walks free-monad continuations as tasks complete.
@@ -16,6 +26,7 @@ defmodule Stc.Interpreter.Distributed do
   """
 
   use GenServer
+  alias Stc.Interpreter.Distributed.State
 
   require Logger
 
@@ -25,41 +36,19 @@ defmodule Stc.Interpreter.Distributed do
 
   @poll_interval_ms 250
 
-  # ---------------------------------------------------------------------------
-  # Internal state
-  # ---------------------------------------------------------------------------
-
-  defmodule State do
-    @moduledoc false
-
-    @type t :: %__MODULE__{
-            cursor: Stc.Backend.EventLog.cursor()
-          }
-
-    defstruct [:cursor]
-  end
-
-  # ---------------------------------------------------------------------------
-  # Public API
-  # ---------------------------------------------------------------------------
-
-  @spec start_link(keyword()) :: GenServer.on_start()
+  @doc false
   def start_link(_opts) do
     GenServer.start_link(__MODULE__, %State{}, name: __MODULE__)
   end
 
-  # ---------------------------------------------------------------------------
-  # GenServer callbacks
-  # ---------------------------------------------------------------------------
-
-  @impl GenServer
+  @impl true
   def init(%State{}) do
     state = %State{cursor: Store.origin()}
     schedule_poll()
     {:ok, state}
   end
 
-  @impl GenServer
+  @impl true
   def handle_info(:poll, %State{cursor: cursor} = state) do
     {:ok, events, new_cursor} =
       Store.fetch(cursor, types: [Stc.Event.Completed], limit: 100)
@@ -70,12 +59,8 @@ defmodule Stc.Interpreter.Distributed do
     {:noreply, %State{state | cursor: new_cursor}}
   end
 
-  @impl GenServer
+  @impl true
   def handle_info(_msg, %State{} = state), do: {:noreply, state}
-
-  # ---------------------------------------------------------------------------
-  # Continuation walking
-  # ---------------------------------------------------------------------------
 
   @spec handle_completed(Stc.Event.Completed.t()) :: :ok
   defp handle_completed(%Stc.Event.Completed{
@@ -109,10 +94,6 @@ defmodule Stc.Interpreter.Distributed do
     {:ok, _cursor} = Store.append(event)
     :ok
   end
-
-  # ---------------------------------------------------------------------------
-  # Program advancement (next/4)
-  # ---------------------------------------------------------------------------
 
   @spec next(term(), String.t(), term(), String.t()) :: {term(), [map()]}
 
@@ -223,10 +204,6 @@ defmodule Stc.Interpreter.Distributed do
     end
   end
 
-  # ---------------------------------------------------------------------------
-  # Ready task extraction
-  # ---------------------------------------------------------------------------
-
   @spec extract_ready_tasks(term(), String.t()) :: [map()]
 
   defp extract_ready_tasks(
@@ -274,10 +251,6 @@ defmodule Stc.Interpreter.Distributed do
   end
 
   defp extract_ready_tasks({:free, _other_op, _cont_fn}, _workflow_id), do: []
-
-  # ---------------------------------------------------------------------------
-  # Private helpers
-  # ---------------------------------------------------------------------------
 
   @spec schedule_poll() :: reference()
   defp schedule_poll, do: Process.send_after(self(), :poll, @poll_interval_ms)

@@ -26,4 +26,9 @@ defmodule Stc.Backend.KV do
   Removes the entry for `key`. Idempotent: returns `:ok` even if the key did not exist.
   """
   @callback delete(key :: String.t()) :: :ok | {:error, term()}
+
+  @doc """
+  Returns all keys currently stored. Used for observability / dashboard tooling.
+  """
+  @callback list_keys() :: {:ok, [String.t()]} | {:error, term()}
 end

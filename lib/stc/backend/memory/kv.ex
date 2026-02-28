@@ -1,3 +1,13 @@
+defmodule Stc.Backend.Memory.KV.State do
+  @moduledoc false
+
+  @type t :: %__MODULE__{
+          store: %{String.t() => binary()}
+        }
+
+  defstruct store: %{}
+end
+
 defmodule Stc.Backend.Memory.KV do
   @moduledoc """
   In-memory implementation of `Stc.Backend.KV`.
@@ -16,26 +26,16 @@ defmodule Stc.Backend.Memory.KV do
   @behaviour Stc.Backend.KV
 
   use GenServer
-
+  alias Stc.Backend.Memory.KV.State
   # ---------------------------------------------------------------------------
   # Internal state
   # ---------------------------------------------------------------------------
-
-  defmodule State do
-    @moduledoc false
-
-    @type t :: %__MODULE__{
-            store: %{String.t() => binary()}
-          }
-
-    defstruct store: %{}
-  end
 
   # ---------------------------------------------------------------------------
   # Public API
   # ---------------------------------------------------------------------------
 
-  @spec start_link(keyword()) :: GenServer.on_start()
+  @doc false
   def start_link(opts \\ []) do
     name = Keyword.get(opts, :name, __MODULE__)
     GenServer.start_link(__MODULE__, %State{}, name: name)
@@ -59,21 +59,27 @@ defmodule Stc.Backend.Memory.KV do
     GenServer.call(__MODULE__, {:delete, key})
   end
 
+  @impl Stc.Backend.KV
+  @spec list_keys() :: {:ok, [String.t()]}
+  def list_keys do
+    GenServer.call(__MODULE__, :list_keys)
+  end
+
   # ---------------------------------------------------------------------------
   # GenServer callbacks
   # ---------------------------------------------------------------------------
 
-  @impl GenServer
+  @impl true
   def init(%State{} = state) do
     {:ok, state}
   end
 
-  @impl GenServer
+  @impl true
   def handle_call({:put, key, value}, _from, %State{store: store} = state) do
     {:reply, :ok, %State{state | store: Map.put(store, key, value)}}
   end
 
-  @impl GenServer
+  @impl true
   def handle_call({:get, key}, _from, %State{store: store} = state) do
     case Map.fetch(store, key) do
       {:ok, value} -> {:reply, {:ok, value}, state}
@@ -81,8 +87,13 @@ defmodule Stc.Backend.Memory.KV do
     end
   end
 
-  @impl GenServer
+  @impl true
   def handle_call({:delete, key}, _from, %State{store: store} = state) do
     {:reply, :ok, %State{state | store: Map.delete(store, key)}}
+  end
+
+  @impl true
+  def handle_call(:list_keys, _from, %State{store: store} = state) do
+    {:reply, {:ok, Map.keys(store)}, state}
   end
 end

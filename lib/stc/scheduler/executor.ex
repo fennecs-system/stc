@@ -77,25 +77,24 @@ defmodule Stc.Scheduler.Executor do
 
   # api
 
-  @spec via(String.t()) :: {:via, module(), {module(), String.t()}}
+  @doc false
   def via(task_id) do
     {:via, Horde.Registry, {Stc.ExecutorRegistry, "executor_#{task_id}"}}
   end
 
-  @spec start_link(map()) :: GenServer.on_start()
+  @doc false
   def start_link(config) do
     GenServer.start_link(__MODULE__, struct!(State, config), name: via(config.task_id))
   end
 
-  @impl GenServer
+  @impl true
   def init(%State{} = state) do
-    send(self(), :start)
-    {:ok, state}
+    {:ok, state, {:continue, :start}}
   end
 
-  @impl GenServer
-  def handle_info(:start, %State{} = state) do
-    context = to_context(state)
+  @impl true
+  def handle_continue(:start, %State{} = state) do
+    %Context{} = context = to_context(state)
 
     case state.task_spec.module.start(state.task_spec, context) do
       {:ok, result} ->
@@ -113,17 +112,17 @@ defmodule Stc.Scheduler.Executor do
     end
   end
 
-  @impl GenServer
+  @impl true
   def handle_info({:started_tick, task_id}, %State{task_id: task_id} = state) do
     {:noreply, cancel_startup_timeout(state)}
   end
 
-  @impl GenServer
+  @impl true
   def handle_info({:reply, task_id, _agent_id, :started_tick}, %State{task_id: task_id} = state) do
     {:noreply, cancel_startup_timeout(state)}
   end
 
-  @impl GenServer
+  @impl true
   def handle_info(
         {:reply, task_id, _agent_id, {:result, result}},
         %State{task_id: task_id} = state
@@ -132,7 +131,7 @@ defmodule Stc.Scheduler.Executor do
     {:stop, :normal, state}
   end
 
-  @impl GenServer
+  @impl true
   def handle_info(
         {:reply, task_id, _agent_id, {:failed, reason}},
         %State{task_id: task_id} = state
@@ -141,19 +140,19 @@ defmodule Stc.Scheduler.Executor do
     handle_failure(state, reason, context)
   end
 
-  @impl GenServer
+  @impl true
   def handle_info(:startup_timeout, %State{} = state) do
     emit_failure(state, :startup_timeout, true)
     {:stop, :normal, state}
   end
 
-  @impl GenServer
+  @impl true
   def handle_info(:task_timeout, %State{} = state) do
     emit_failure(state, :task_timeout, true)
     {:stop, :normal, state}
   end
 
-  @impl GenServer
+  @impl true
   def handle_info(_msg, %State{} = state), do: {:noreply, state}
 
   @spec to_context(State.t()) :: Context.t()

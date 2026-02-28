@@ -58,10 +58,6 @@ defmodule Stc.Backend do
     |> Enum.reject(&is_nil/1)
   end
 
-  # ---------------------------------------------------------------------------
-  # Private helpers
-  # ---------------------------------------------------------------------------
-
   @spec maybe_child_spec(module(), keyword()) :: Supervisor.child_spec() | nil
   defp maybe_child_spec(mod, opts) do
     if function_exported?(mod, :start_link, 1) do
