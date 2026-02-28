@@ -1,17 +1,18 @@
-defmodule STC.Program do
+defmodule Stc.Program do
   @moduledoc """
-  A program is a sequence of operations to be executed by the STC
+  A program is a sequence of operations to be executed by the Stc
   """
 
-  alias STC.Op
-  import STC.Free
+  import Stc.Free
+
+  alias Stc.Op
 
   def run(module, payload, task_id \\ nil, opts \\ [])
 
   def run(module, payload, nil, opts) do
     {:free,
      %Op.Run{
-       task_id: Ecto.UUID.generate() |> dbg(),
+       task_id: Ecto.UUID.generate(),
        module: module,
        payload: payload,
        # map opts to fields

@@ -1,4 +1,4 @@
-defmodule STC.Event do
+defmodule Stc.Event do
   @moduledoc false
 
   defmodule Ready do
@@ -21,7 +21,38 @@ defmodule STC.Event do
 
   defmodule Completed do
     @moduledoc false
+
+    alias Stc.Task.Result
+
+    @type t :: %__MODULE__{
+            workflow_id: String.t(),
+            task_id: String.t(),
+            agent_ids: [String.t()] | nil,
+            result: Result.t(),
+            attempt: pos_integer() | nil,
+            timestamp: DateTime.t() | nil
+          }
+
     defstruct [:workflow_id, :task_id, :agent_ids, :result, :attempt, :timestamp]
+  end
+
+  defmodule Pending do
+    @moduledoc false
+    defstruct [
+      :workflow_id,
+      :task_id,
+      :module,
+      :payload,
+      :conditions,
+      :last_schedule_attempt,
+      :schedule_attempts,
+      :timestamp
+    ]
+  end
+
+  defmodule Preempted do
+    @moduledoc false
+    defstruct [:workflow_id, :task_id, :preempted_by, :reason, :timestamp]
   end
 
   defmodule Failed do

@@ -1,13 +1,14 @@
-defmodule STC.Interpreter do
+defmodule Stc.Interpreter do
   @moduledoc """
-  Interpreter for STC programs
+  Interpreter for Stc programs
   """
 
-  alias STC.Event
-  alias STC.Event.Store
-  alias STC.Op
-  alias STC.Spec
-  alias STC.Program.Store, as: ProgramStore
+  alias Stc.Event
+  alias Stc.Event.Store
+  alias Stc.Op
+  alias Stc.Program.Store, as: ProgramStore
+  alias Stc.Task.Result
+  alias Stc.Task.Spec
 
   def local(program, context) do
     interpret_local(program, context)
@@ -32,7 +33,10 @@ defmodule STC.Interpreter do
       timestamp: DateTime.utc_now()
     })
 
-    case mod.execute(task_spec, exec_context) do
+    case mod.start(task_spec, exec_context) do
+      {:ok, %Result{value: result}} ->
+        interpret_local(cont_fn.(result), context)
+
       {:ok, result} ->
         interpret_local(cont_fn.(result), context)
 
@@ -69,7 +73,7 @@ defmodule STC.Interpreter do
     results =
       programs
       |> Enum.map(fn p -> Task.async(fn -> interpret_local(p, context) end) end)
-      |> Enum.map(&Task.await/1)
+      |> Task.await_many()
 
     case Enum.find(results, fn {status, _} -> status == :error end) do
       {:error, reason} ->
@@ -78,6 +82,28 @@ defmodule STC.Interpreter do
       nil ->
         ok_results = Enum.map(results, fn {:ok, r} -> r end)
         interpret_local(cont_fn.(ok_results), context)
+    end
+  end
+
+  defp interpret_local(
+         {:free, %Op.Unfold{step_fn: step_fn, current_step: current_step}, cont_fn},
+         context
+       ) do
+    case interpret_local(current_step, context) do
+      {:ok, step_result} ->
+        case step_fn.(step_result) do
+          {:cont, next_step} ->
+            interpret_local(
+              {:free, %Op.Unfold{step_fn: step_fn, current_step: next_step}, cont_fn},
+              context
+            )
+
+          :halt ->
+            interpret_local(cont_fn.(step_result), context)
+        end
+
+      {:error, _} = err ->
+        err
     end
   end
 
@@ -144,10 +170,16 @@ defmodule STC.Interpreter do
 
   defp interpret_distributed(
          {:free, %Op.Sequence{programs: []}, _cont_fn},
+         _context
+       ) do
+    {:ok, :done}
+  end
+
+  defp interpret_distributed(
+         {:free, %Op.Unfold{current_step: current_step}, _cont_fn},
          context
        ) do
-    # nothing to do
-    {:ok, :done}
+    interpret_distributed(current_step, context)
   end
 
   defp interpret_distributed(
@@ -184,6 +216,10 @@ defmodule STC.Interpreter do
 
   defp collect_steps({:free, %Op.OnFailure{task_id: id, handler: _handler}, _cont_fn}) do
     {:on_failure, id}
+  end
+
+  defp collect_steps({:free, %Op.Unfold{current_step: current_step}, _cont_fn}) do
+    {:unfold, collect_steps(current_step)}
   end
 
   defp collect_steps(_), do: :woof

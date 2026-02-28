@@ -27,7 +27,29 @@
           packages = [
             elixir
             erlang
+            pkgs.postgresql_18
           ];
+
+          shellHook = ''
+            export PGDATA="$PWD/.postgres/data"
+            export PGHOST="localhost"
+            export PGPORT="5432"
+
+            if [ ! -d "$PGDATA" ]; then
+              initdb "$PGDATA" \
+                --no-locale \
+                --encoding=UTF8 \
+                --auth=trust \
+                --username=postgres \
+                > /dev/null
+              echo "listen_addresses = 'localhost'" >> "$PGDATA/postgresql.conf"
+              echo "unix_socket_directories = '$PWD/.postgres'" >> "$PGDATA/postgresql.conf"
+            fi
+
+            if ! pg_ctl -D "$PGDATA" status > /dev/null 2>&1; then
+              pg_ctl -D "$PGDATA" -l "$PGDATA/postgres.log" -s start
+            fi
+          '';
         };
       }
     );

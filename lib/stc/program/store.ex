@@ -1,42 +1,51 @@
-defmodule STC.Program.Store do
+defmodule Stc.Program.Store do
   @moduledoc """
-  A table for storing a program to track progress in distributed execution.
+  Facade over the configured `Stc.Backend.KV` backend, providing typed
+  put/get operations for program continuation state.
+
+  Values are serialised with `:erlang.term_to_binary/1` (allowing arbitrary Elixir
+  terms including closures and continuations) and deserialised with
+  `:erlang.binary_to_term/2` using the `:safe` flag.
+
+  The `workflow_id` is always a `String.t()` key. The stored value is the current
+  free-monad program tree for that workflow.
   """
 
-  use GenServer
-
-  def start_link(_opts) do
-    GenServer.start_link(__MODULE__, %{}, name: __MODULE__)
+  @doc "Persists `program` under `workflow_id`, overwriting any prior state."
+  @spec put(String.t(), term()) :: :ok | {:error, term()}
+  def put(workflow_id, program) when is_binary(workflow_id) do
+    backend().put(workflow_id, :erlang.term_to_binary(program))
   end
 
-  @impl true
-  def init(state) do
-    {:ok, state}
+  @doc """
+  Retrieves the program stored under `workflow_id`.
+
+  Returns `{:error, :not_found}` when no program has been stored for that workflow.
+  """
+  @spec get(String.t()) :: {:ok, term()} | {:error, :not_found}
+  def get(workflow_id) when is_binary(workflow_id) do
+    case backend().get(workflow_id) do
+      {:ok, binary} -> {:ok, :erlang.binary_to_term(binary, [:safe])}
+      {:error, :not_found} = err -> err
+    end
   end
 
-  def put(key, value) do
-    GenServer.call(__MODULE__, {:put, key, value})
+  @doc "Removes the program state for `workflow_id`."
+  @spec delete(String.t()) :: :ok | {:error, term()}
+  def delete(workflow_id) when is_binary(workflow_id) do
+    backend().delete(workflow_id)
   end
 
-  def get(key) do
-    GenServer.call(__MODULE__, {:get, key})
+  @doc "Returns all workflow IDs that currently have stored program state."
+  @spec list_workflow_ids() :: {:ok, [String.t()]} | {:error, term()}
+  def list_workflow_ids do
+    backend().list_keys()
   end
 
-  @impl true
-  def handle_call({:put, key, value}, _from, state) do
-    binary = :erlang.term_to_binary(value)
-    new_state = Map.put(state, key, binary) |> dbg()
-    {:reply, :ok, new_state}
-  end
+  # ---------------------------------------------------------------------------
+  # Private helpers
+  # ---------------------------------------------------------------------------
 
-  @impl true
-  def handle_call({:get, key}, _from, state) when is_map_key(state, key) do
-    binary = Map.get(state, key)
-    value = :erlang.binary_to_term(binary)
-    {:reply, {:ok, value}, state}
-  end
-
-  def handle_call({:get, key}, _from, state) when is_map_key(state, key) do
-    {:reply, {:error, nil}, state}
-  end
+  @spec backend() :: module()
+  defp backend, do: Stc.Backend.kv()
 end

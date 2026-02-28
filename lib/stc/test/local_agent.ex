@@ -1,4 +1,4 @@
-defmodule STC.Agent.LocalTestAgent do
+defmodule Stc.Agent.LocalTestAgent do
   @moduledoc """
   An executor that runs tasks on agents
   """

@@ -1,4 +1,4 @@
-defmodule STC.Task.RetryPolicy do
+defmodule Stc.Task.RetryPolicy do
   @moduledoc """
   Executes a task
   """
@@ -9,7 +9,6 @@ defmodule STC.Task.RetryPolicy do
           backoff_ms: pos_integer(),
           retriable_reasons: [atom()] | :all
         }
-
 
   def retriable?(%__MODULE__{} = policy, reason) do
     case policy.retriable_reasons do

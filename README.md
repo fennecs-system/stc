@@ -2,7 +2,7 @@
 
 ## About
 
-STC is wip library for declarative programmatic workflows in elixir using a simple monad like syntax:
+Stc is wip library for declarative programmatic workflows in elixir using a simple monad like syntax:
 
 ```elixir
 program =
@@ -36,6 +36,67 @@ The goals are:
 - an event system for tracing and possibly state reconcilliation or cleanup
 - distributed first design (runs in a cluster with horde)
 - reliability - survive app restarts/cluster rebalancing
+
+
+## Setup
+
+### 1. Add a migration
+
+```elixir
+defmodule MyApp.Repo.Migrations.AddStcTables do
+  use Ecto.Migration
+  def up, do: Stc.Migrations.up()
+  def down, do: Stc.Migrations.down()
+end
+```
+
+Run `mix ecto.migrate` as normal.
+
+### 2. Add to your supervision tree
+
+```elixir
+children = [
+  MyApp.Repo,
+  {Stc, repo: MyApp.Repo, schedulers: [
+    [id: "primary", algorithm: MyApp.SchedulingAlgorithm, level: :local]
+  ]}
+]
+Supervisor.start_link(children, strategy: :one_for_one)
+```
+
+### 3. Write a task
+
+```elixir
+defmodule MyApp.MyTask do
+  @behaviour Stc.Task
+
+  alias Stc.Task.Result
+
+  @impl true
+  def start(%Stc.Task.Spec{payload: payload}, _context) do
+    {:ok, Result.to_result(woof(payload))}
+  end
+end
+```
+
+### 4. Write a workflow / program
+
+```elixir
+import Stc.Free
+
+program =
+  Program.parallel([
+    Program.run(MyApp.MyTask, %{input: "a"}),
+    Program.run(MyApp.MyTask, %{input: "b"})
+  ])
+  |> bind(fn [r1, r2] ->
+    Program.run(MyApp.MyTask, %{input: r1 <> r2})
+  end)
+
+Interpreter.distributed(program, %{workflow_id: "my-workflow-1"})
+```
+
+`bind/2` threads the results of one step into the next. Use `Program.sequence/1` for ordered steps or `unfold/2` to loop until a condition is met.
 
 
 ## Installation

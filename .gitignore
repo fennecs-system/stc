@@ -24,4 +24,4 @@ stc-*.tar
 
 #
 .cache/
-
+.postgres/

@@ -137,6 +137,26 @@
           {Credo.Check.Refactor.WithClauses, []},
 
           #
+          ## added from Controversial
+          #
+
+          {Credo.Check.Refactor.RejectFilter, []},
+          {Credo.Check.Refactor.FilterReject, []},
+          {Credo.Check.Refactor.IoPuts, []},
+          {Credo.Check.Refactor.MapMap, []},
+          {Credo.Check.Warning.MapGetUnsafePass, []},
+          {Credo.Check.Refactor.DoubleBooleanNegation, []},
+          {Credo.Check.Refactor.AppendSingleItem, []},
+          {Credo.Check.Refactor.NegatedIsNil, []},
+          {Credo.Check.Readability.WithCustomTaggedTuple, []},
+          {Credo.Check.Readability.StrictModuleLayout, []},
+          {Credo.Check.Refactor.VariableRebinding, []},
+
+          # ignore some test files
+          {Credo.Check.Design.DuplicatedCode, [files: %{excluded: ["test/stc/postgres_program_test.exs"]}]},
+          {Credo.Check.Refactor.PipeChainStart, [files: %{excluded: ["test/stc/*.exs"]}]},
+
+          #
           ## Warnings
           #
           {Credo.Check.Warning.ApplicationConfigInModuleAttribute, []},
@@ -174,7 +194,6 @@
           #
           {Credo.Check.Consistency.MultiAliasImportRequireUse, []},
           {Credo.Check.Consistency.UnusedVariableNames, []},
-          {Credo.Check.Design.DuplicatedCode, []},
           {Credo.Check.Design.SkipTestWithoutComment, []},
           {Credo.Check.Readability.AliasAs, []},
           {Credo.Check.Readability.BlockPipe, []},
@@ -187,23 +206,11 @@
           {Credo.Check.Readability.SingleFunctionToBlockPipe, []},
           {Credo.Check.Readability.SinglePipe, []},
           {Credo.Check.Readability.Specs, []},
-          {Credo.Check.Readability.StrictModuleLayout, []},
-          {Credo.Check.Readability.WithCustomTaggedTuple, []},
           {Credo.Check.Refactor.ABCSize, []},
-          {Credo.Check.Refactor.AppendSingleItem, []},
-          {Credo.Check.Refactor.DoubleBooleanNegation, []},
-          {Credo.Check.Refactor.FilterReject, []},
-          {Credo.Check.Refactor.IoPuts, []},
-          {Credo.Check.Refactor.MapMap, []},
           {Credo.Check.Refactor.ModuleDependencies, []},
-          {Credo.Check.Refactor.NegatedIsNil, []},
           {Credo.Check.Refactor.PassAsyncInTestCases, []},
-          {Credo.Check.Refactor.PipeChainStart, []},
-          {Credo.Check.Refactor.RejectFilter, []},
-          {Credo.Check.Refactor.VariableRebinding, []},
           {Credo.Check.Warning.LazyLogging, []},
           {Credo.Check.Warning.LeakyEnvironment, []},
-          {Credo.Check.Warning.MapGetUnsafePass, []},
           {Credo.Check.Warning.MixEnv, []},
           {Credo.Check.Warning.UnsafeToAtom, []}
           # {Credo.Check.Warning.UnusedOperation, [{MyMagicModule, [:fun1, :fun2]}]}
