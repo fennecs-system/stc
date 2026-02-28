@@ -277,9 +277,8 @@ defmodule Stc.Interpreter.Distributed do
   @spec schedule_poll() :: reference()
   defp schedule_poll, do: Process.send_after(self(), :poll, @poll_interval_ms)
 
-  # ---------------------------------------------------------------------------
-  # Cursor persistence
-  # ---------------------------------------------------------------------------
+  # the cursor is used to store the current head of the event store
+  # so when the app restarts we can resume without having to walk from the start
 
   @spec load_cursor() :: Stc.Backend.EventLog.cursor()
   defp load_cursor do
