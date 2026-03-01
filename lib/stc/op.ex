@@ -20,9 +20,22 @@ defmodule Stc.Op do
 
   # planned -
   # for reversing a Run op
+  # however tasks now have a Clean step so this might just be equivalent to a Run
+  # perhaps we could emit a Clean event instead
   defmodule Clean do
     @moduledoc false
     defstruct [:task_id, :module, :payload, :cluster_affinity, :space_affinity, :agent_affinity]
+  end
+
+  # probably need some semantics for moving a job between spaces
+  # eg its currently tunning on one space affinity - needs to be
+  # moved to a different space
+  # somehow does something to an entire workflow tho
+  # changes affinitiess
+  # need to gracefully move
+  defmodule Move do
+    @moduledoc false
+    defstruct [:task_id]
   end
 
   # planned -
@@ -67,6 +80,8 @@ defmodule Stc.Op do
   end
 
   # planned
+  # hook to be able to emit generic events - for other stuff to happen
+  # kind of dynamic
   defmodule EmitEvent do
     @moduledoc false
     defstruct [:event, :continuation]
