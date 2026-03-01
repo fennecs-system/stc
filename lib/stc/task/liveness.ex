@@ -1,4 +1,4 @@
-defmodule Stc.Task.Spec.LivenessCheck do
+defmodule Stc.Task.LivenessCheck do
   @moduledoc """
   Configuration for a tasks liveness probe run by the executor.
 

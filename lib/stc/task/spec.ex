@@ -3,8 +3,8 @@ defmodule Stc.Task.Spec do
   Generic specification for a task
   """
 
+  alias Stc.Task.LivenessCheck
   alias Stc.Task.Policy
-  alias Stc.Task.Spec.LivenessCheck
 
   defstruct [
     :module,

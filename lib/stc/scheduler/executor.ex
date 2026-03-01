@@ -80,11 +80,12 @@ defmodule Stc.Scheduler.Executor do
   alias Stc.Scheduler.Executor.State
   alias Stc.Task
   alias Stc.Task.Context
+  alias Stc.Task.LivenessCheck
+
   alias Stc.Task.Policy
   alias Stc.Task.Policy.Retry
   alias Stc.Task.Result
   alias Stc.Task.Spec
-  alias Stc.Task.Spec.LivenessCheck
 
   require Logger
 
@@ -266,7 +267,10 @@ defmodule Stc.Scheduler.Executor do
   @impl true
   def handle_info(:liveness_check, %State{} = state) do
     context = to_context(state)
-    %Spec{liveness_check: %LivenessCheck{interval_ms: interval, max_failures: max, window_ms: window}} = state.task_spec
+
+    %Spec{
+      liveness_check: %LivenessCheck{interval_ms: interval, max_failures: max, window_ms: window}
+    } = state.task_spec
 
     now = System.monotonic_time(:millisecond)
 
