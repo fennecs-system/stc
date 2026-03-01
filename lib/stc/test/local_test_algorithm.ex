@@ -14,11 +14,9 @@ defmodule Stc.Scheduler.Algorithm.LocalTestAlgorithm do
   @impl Stc.Scheduler.Algorithm
   def refresh_agent_pool(state) do
     agents =
-      Enum.map(1..5, fn i ->
-        %LocalTestAgent{id: "local_test_agent_#{i}", status: :active}
-      end)
+      Enum.map(1..5, fn i -> %LocalTestAgent{id: "local_test_agent_#{i}", status: :active} end)
 
-    %{state | agent_pool: agents}
+    %{state | agent_pool: %{active: agents}}
   end
 
   @impl Stc.Scheduler.Algorithm

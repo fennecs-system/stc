@@ -31,9 +31,10 @@ defmodule Stc.Scheduler.State do
           id: String.t(),
           # :local | :space | :cluster
           level: atom(),
-          agent_pool: [Stc.Agent.t()],
-          # Agents temporarily inactive (e.g. brief timeout, heartbeat missed).
-          stale_agent_pool: [Stc.Agent.t()],
+          # All known agents grouped by status atom, e.g. %{active: [...], unhealthy: [...]}.
+          # The :active bucket is the scheduling-eligible set; other buckets are available
+          # to reconcile_stale_agents for backend-specific remediation.
+          agent_pool: %{atom() => [Stc.Agent.t()]},
           algorithm: module(),
           # agent_id => [task_id]
           agent_tasks: %{String.t() => [String.t()]},
@@ -68,7 +69,6 @@ defmodule Stc.Scheduler.State do
     :id,
     :level,
     :agent_pool,
-    :stale_agent_pool,
     :algorithm,
     :agent_tasks,
     :task_locks,

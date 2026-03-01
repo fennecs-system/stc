@@ -13,7 +13,7 @@ defmodule Stc.Scheduler do
   - `Pending`   → re-attempt scheduling directly; on failure emit a new `Event.Pending`
                   with an incremented `schedule_attempts` counter.
   - `Preempted` → infrastructure-triggered stop; releases lock and re-emits `Ready` for
-                  rescheduling on fresh agents (see `Stc.Scheduler.AgentHealth`).
+                  rescheduling on fresh agents (see `Stc.Scheduler.Runtime`).
   - `Started`   → no-op (scheduler has already handed off; executor drives this).
   - `Completed` → clean up active-task tracking.
 
@@ -30,8 +30,8 @@ defmodule Stc.Scheduler do
   alias Stc.Event.Store
   alias Stc.ReplyBuffer
   alias Stc.Scheduler.Affinity
-  alias Stc.Scheduler.AgentHealth
   alias Stc.Scheduler.Executor
+  alias Stc.Scheduler.Runtime
   alias Stc.Scheduler.State
   alias Stc.Task.Spec
 
@@ -97,8 +97,7 @@ defmodule Stc.Scheduler do
     state = %State{
       id: id,
       level: Keyword.get(opts, :level),
-      agent_pool: [],
-      stale_agent_pool: [],
+      agent_pool: %{},
       algorithm: Keyword.fetch!(opts, :algorithm),
       agent_tasks: %{},
       task_locks: %{},
@@ -140,7 +139,7 @@ defmodule Stc.Scheduler do
     state =
       state
       |> refresh_agent_pool()
-      |> AgentHealth.check_transitions(old_pool)
+      |> Runtime.check_transitions(old_pool)
       |> reconcile_stale_agents()
       |> process_agent_buffer()
       |> fetch_and_modify_state()
@@ -166,7 +165,23 @@ defmodule Stc.Scheduler do
 
   @impl true
   def handle_info({:agent_eviction_timeout, agent_id}, %State{} = state) do
-    AgentHealth.handle_eviction_timeout(agent_id, state)
+    Runtime.handle_eviction_timeout(agent_id, state)
+  end
+
+  @impl true
+  def handle_info({:DOWN, _ref, :process, pid, _reason}, %State{} = state) do
+    case Enum.find(state.active_tasks, fn {_task_id, task_pid} -> task_pid == pid end) do
+      nil ->
+        {:noreply, state}
+
+      {task_id, _pid} ->
+        new_state =
+          state
+          |> Runtime.teardown_task(task_id)
+          |> Map.update!(:preempting_task_ids, &if(&1, do: MapSet.delete(&1, task_id), else: &1))
+
+        {:noreply, new_state}
+    end
   end
 
   @spec schedule_event_loop(State.t()) :: State.t()
@@ -196,7 +211,7 @@ defmodule Stc.Scheduler do
   end
 
   #
-  ## Event → state reducers
+  ## Event -> state reducers
   #
 
   @spec handle_event(struct(), State.t()) :: State.t()
@@ -229,20 +244,20 @@ defmodule Stc.Scheduler do
   end
 
   defp handle_event(%Stc.Event.Preempted{task_id: task_id}, %State{} = state) do
-    AgentHealth.handle_preempted(task_id, state)
+    Runtime.handle_preempted(task_id, state)
   end
 
   # planned - no terminal handling yet; struct exists for log visibility
   defp handle_event(%Stc.Event.Rejected{}, %State{} = state), do: state
 
   defp handle_event(%Stc.Event.Completed{task_id: task_id}, %State{} = state) do
-    AgentHealth.cleanup_task(state, task_id)
+    Runtime.teardown_task(state, task_id)
   end
 
   # Non-retriable failures are terminal; clean up the same way as completions.
   # Retriable failures leave the executor running (it reschedules itself internally).
   defp handle_event(%Stc.Event.Failed{retriable: false, task_id: task_id}, %State{} = state) do
-    AgentHealth.cleanup_task(state, task_id)
+    Runtime.teardown_task(state, task_id)
   end
 
   defp handle_event(%Stc.Event.Started{}, %State{} = state), do: state
@@ -308,7 +323,9 @@ defmodule Stc.Scheduler do
           {:ok, [Stc.Agent.t()]} | {:error, :no_capacity}
   defp select_agents_for_event(%Stc.Event.Ready{} = event, %State{} = state) do
     available =
-      Enum.filter(state.agent_pool, fn agent ->
+      state.agent_pool
+      |> Map.get(:active, [])
+      |> Enum.filter(fn agent ->
         state.algorithm.agent_matches_requirements?(agent, event) and
           (agent_is_free?(agent, state) or state.algorithm.can_oversubscribe?(agent, event, state))
       end)
@@ -346,6 +363,9 @@ defmodule Stc.Scheduler do
 
     case Executor.start_link(config) do
       {:ok, pid} ->
+        # monitor so we can cleanup
+        Process.monitor(pid)
+
         {:ok,
          %State{
            state
@@ -376,6 +396,8 @@ defmodule Stc.Scheduler do
       Map.update(acc, agent.id, [task_id], &[task_id | &1])
     end)
   end
+
+  # tell the executor to cancel
 
   @spec send_cancel(String.t(), State.t()) :: :ok
   defp send_cancel(task_id, %State{active_tasks: active}) do
