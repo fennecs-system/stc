@@ -1,21 +1,3 @@
-defmodule Stc.ReplyBuffer.State do
-  @moduledoc false
-  defstruct scheduler_id: nil, buffer: %{}, executors: %{}
-
-  @type entry :: %{
-          task_id: String.t(),
-          agent_id: String.t(),
-          message: term(),
-          timestamp: DateTime.t()
-        }
-
-  @type t :: %__MODULE__{
-          scheduler_id: String.t(),
-          buffer: %{String.t() => [entry()]},
-          executors: %{String.t() => pid()}
-        }
-end
-
 defmodule Stc.ReplyBuffer do
   @moduledoc """
   Per-scheduler buffer for messages arriving from agents.
@@ -61,7 +43,11 @@ defmodule Stc.ReplyBuffer do
   @spec register_executor(pid(), String.t(), pid()) :: :ok
   def register_executor(reply_buffer_pid, task_id, executor_pid)
       when is_pid(reply_buffer_pid) and is_binary(task_id) and is_pid(executor_pid) do
-    GenServer.call(reply_buffer_pid, {:register_executor, task_id, executor_pid})
+    GenServer.call(
+      reply_buffer_pid,
+      {:register_executor, task_id, executor_pid},
+      :timer.minutes(5)
+    )
   end
 
   @doc """
@@ -73,7 +59,7 @@ defmodule Stc.ReplyBuffer do
   @spec unregister_executor(pid(), String.t()) :: :ok
   def unregister_executor(reply_buffer_pid, task_id)
       when is_pid(reply_buffer_pid) and is_binary(task_id) do
-    GenServer.call(reply_buffer_pid, {:unregister_executor, task_id})
+    GenServer.call(reply_buffer_pid, {:unregister_executor, task_id}, :timer.minutes(5))
   end
 
   @doc """
@@ -87,14 +73,18 @@ defmodule Stc.ReplyBuffer do
   @spec add_message(String.t(), String.t(), String.t(), term()) :: :ok
   def add_message(scheduler_id, task_id, agent_id, message)
       when is_binary(scheduler_id) and is_binary(task_id) do
-    GenServer.call(via(scheduler_id), {:add_message, task_id, agent_id, message})
+    GenServer.call(
+      via(scheduler_id),
+      {:add_message, task_id, agent_id, message},
+      :timer.minutes(5)
+    )
   end
 
   @doc "Variant that accepts a PID instead of a scheduler_id string."
   @spec add_message_via_pid(pid(), String.t(), String.t(), term()) :: :ok
   def add_message_via_pid(pid, task_id, agent_id, message)
       when is_pid(pid) and is_binary(task_id) do
-    GenServer.call(pid, {:add_message, task_id, agent_id, message})
+    GenServer.call(pid, {:add_message, task_id, agent_id, message}, :timer.minutes(5))
   end
 
   @doc false

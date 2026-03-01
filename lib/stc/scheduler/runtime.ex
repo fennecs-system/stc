@@ -125,8 +125,6 @@ defmodule Stc.Scheduler.Runtime do
       when is_map_key(t2p, task_id) do
     {pid, new_t2p} = Map.pop(t2p, task_id)
 
-    ReplyBuffer.unregister_executor(state.reply_buffer, task_id)
-
     # Only touch the agents that were actually assigned to this task.
     agent_ids = Map.get(state.task_agents, task_id, [])
 
@@ -141,6 +139,8 @@ defmodule Stc.Scheduler.Runtime do
         nil -> state.workflow_tasks
         %{workflow_id: wf_id} -> prune_workflow_task(state.workflow_tasks, wf_id, task_id)
       end
+
+    ReplyBuffer.unregister_executor(state.reply_buffer, task_id)
 
     %State{
       state
