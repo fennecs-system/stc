@@ -1,37 +1,29 @@
-defmodule Stc.Interpreter.Distributed.State do
-  @moduledoc false
-
-  @type t :: %__MODULE__{
-          cursor: Stc.Backend.EventLog.cursor()
-        }
-
-  defstruct [:cursor]
-end
-
 defmodule Stc.Interpreter.Distributed do
   @moduledoc """
   A GenServer that walks free-monad continuations as tasks complete.
 
   ## Event consumption
 
-  Rather than subscribing to the event store (which would couple this module to
+  Instead of subscribing to the event store (which would couple this module to
   backend push semantics), the walker maintains its own `cursor` and polls for
-  `Completed` events each tick. This makes it backend-agnostic and deterministic.
+  `Completed` events each tick. This is to try and make the walker deterministic.
 
   ## Cursor checkpointing
 
   The cursor is persisted to the KV backend after each poll that advances it.
+
   On restart the walker resumes from the saved position rather than replaying
   from the beginning of the log. The checkpoint stores `{cursor, hash}` where
-  `hash = :erlang.phash2(cursor)` — a lightweight sanity check that catches
-  truncated writes or accidental key reuse. If the hash fails the walker falls
-  back to `origin/0` and replays in full (safe because `handle_completed/1` is
+  `hash = :erlang.phash2(cursor)` - a check that catches truncated writes or
+  accidental key reuse.
+
+  If the hash fails the walker falls back to `origin/0` and replays in full (safe because `handle_completed/1` is
   idempotent against an already-advanced program tree).
 
   ## Tick interval
 
   `@poll_interval_ms` controls how frequently the walker checks for new completions.
-  It is intentionally short relative to the scheduler's 1-second loop — the walker
+  It is intentionally short relative to the scheduler's 1-second loop; the walker
   should emit `Ready` events for subsequent tasks before the next scheduler tick.
   """
 
