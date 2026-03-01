@@ -141,7 +141,9 @@ defmodule Stc.Interpreter do
             task_id: id,
             module: mod,
             payload: payload,
-            space_affinity: affinity,
+            space_affinity: space_affinity,
+            cluster_affinity: cluster_affinity,
+            scheduler_affinity: scheduler_affinity,
             policies: policies,
             store: true
           }, _cont_fn},
@@ -166,7 +168,9 @@ defmodule Stc.Interpreter do
           task_id: id,
           module: mod,
           payload: payload,
-          space_affinity: affinity,
+          space_affinity: space_affinity,
+          cluster_affinity: cluster_affinity,
+          scheduler_affinity: scheduler_affinity,
           policies: policies,
           content_hash: hash,
           timestamp: DateTime.utc_now()
@@ -182,7 +186,9 @@ defmodule Stc.Interpreter do
             task_id: id,
             module: mod,
             payload: payload,
-            space_affinity: affinity,
+            space_affinity: space_affinity,
+            cluster_affinity: cluster_affinity,
+            scheduler_affinity: scheduler_affinity,
             policies: policies
           }, _cont_fn},
          context
@@ -193,7 +199,9 @@ defmodule Stc.Interpreter do
       task_id: id,
       module: mod,
       payload: payload,
-      space_affinity: affinity,
+      space_affinity: space_affinity,
+      cluster_affinity: cluster_affinity,
+      scheduler_affinity: scheduler_affinity,
       policies: policies,
       timestamp: DateTime.utc_now()
     }

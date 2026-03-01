@@ -10,6 +10,8 @@ defmodule Stc.Event do
             module: module() | nil,
             payload: map() | nil,
             space_affinity: term(),
+            cluster_affinity: term(),
+            scheduler_affinity: [atom()] | nil,
             timestamp: DateTime.t() | nil,
             scheduled?: boolean() | nil,
             content_hash: String.t() | nil,
@@ -24,6 +26,8 @@ defmodule Stc.Event do
       :space_affinity,
       :timestamp,
       :scheduled?,
+      cluster_affinity: nil,
+      scheduler_affinity: nil,
       content_hash: nil,
       policies: nil
     ]

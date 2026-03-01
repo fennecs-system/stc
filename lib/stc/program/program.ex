@@ -23,6 +23,7 @@ defmodule Stc.Program do
        payload: payload,
        cluster_affinity: Keyword.get(opts, :cluster_affinity, nil),
        space_affinity: Keyword.get(opts, :space_affinity, nil),
+       scheduler_affinity: Keyword.get(opts, :scheduler_affinity, nil),
        agent_affinity: Keyword.get(opts, :agent_affinity, nil),
        store: Keyword.get(opts, :store, false),
        policies: build_policies(opts)
@@ -37,6 +38,7 @@ defmodule Stc.Program do
        payload: payload,
        cluster_affinity: Keyword.get(opts, :cluster_affinity, nil),
        space_affinity: Keyword.get(opts, :space_affinity, nil),
+       scheduler_affinity: Keyword.get(opts, :scheduler_affinity, nil),
        agent_affinity: Keyword.get(opts, :agent_affinity, nil),
        store: Keyword.get(opts, :store, false),
        policies: build_policies(opts)

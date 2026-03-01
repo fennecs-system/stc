@@ -9,6 +9,21 @@ defmodule Stc.Scheduler.State do
   not be acted on immediately (e.g. `Ready` events with no available agents) are kept
   in `pending_ready` and retried on the next tick. All other event types are consumed
   once and discarded from in-memory state.
+
+  ## Affinity routing
+
+  Three fields narrow which `Ready` events this scheduler will handle:
+
+  - `tags` — matched against `Event.Ready.scheduler_affinity`. A task with no
+    `scheduler_affinity` (nil) is accepted by any scheduler. A task *with* tags is
+    only accepted by a scheduler that shares at least one tag. An **untagged scheduler**
+    (`tags: []`) will **not** pick up tagged tasks — it only handles untagged ones.
+  - `space_id` — matched exactly against `Event.Ready.space_affinity`. nil on the task
+    means "any space"; nil on the scheduler means "space unknown, reject space-pinned tasks".
+  - `cluster_id` — same exact-match semantics as `space_id`.
+
+  All three must match for the scheduler to act on an event. Existing schedulers and
+  tasks that leave all affinity fields nil continue to match each other unchanged.
   """
 
   @type t :: %__MODULE__{
@@ -33,7 +48,11 @@ defmodule Stc.Scheduler.State do
           # pid of this scheduler's ReplyBuffer
           reply_buffer: pid(),
           # time in ms of tick rate - defaults to 1 sec
-          scheduler_tick_rate_ms: integer()
+          scheduler_tick_rate_ms: integer(),
+          # Affinity dimensions for routing Ready events to this scheduler.
+          tags: [atom()],
+          space_id: String.t() | nil,
+          cluster_id: String.t() | nil
         }
 
   defstruct [
@@ -49,6 +68,9 @@ defmodule Stc.Scheduler.State do
     :event_cursor,
     :reply_buffer,
     :scheduler_tick_rate_ms,
-    pending_ready: []
+    :space_id,
+    :cluster_id,
+    pending_ready: [],
+    tags: []
   ]
 end

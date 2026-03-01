@@ -3,16 +3,20 @@ defmodule Stc.Task do
   A generic task behaviour.
 
   Tasks are started by an agent. If the app dies mid-execution a transactional
-  `clean/2` step can roll back any side-effects, after which the task is
+  `clean/2` step can roll back any side-effects, after which the task can be
   retried via `start/2`.
 
   For async tasks that return `{:started, handle}`, implement `resume/3` so a
   restarted executor can reconnect to in-flight work instead of launching a new
-  instance. `resume/3` is called whenever a task has a `Started` event with no
-  corresponding `Completed` — whether the task was still starting up or actively
-  running at the time of the crash. The handle (e.g. a container ID) is sufficient
-  to reconnect to either state. If `resume/3` is not implemented the executor falls
-  back to `clean/2` followed by a fresh `start/2`.
+  instance.
+
+  `resume/3` is called whenever a task has a `Started` event with no
+  corresponding `Completed`; whether the task was still starting up or actively
+  running at the time of the crash.
+
+  The handle (e.g. a container ID) is sufficient to reconnect to either state.
+  If `resume/3` is not implemented the executor falls back to `clean/2` followed
+  by a fresh `start/2`.
   """
 
   alias Stc.Task.Context

@@ -11,29 +11,34 @@ defmodule Stc.Op do
       :payload,
       :cluster_affinity,
       :space_affinity,
+      :scheduler_affinity,
       :agent_affinity,
       store: false,
       policies: %Stc.Task.Policy{}
     ]
   end
 
+  # planned -
   # for reversing a Run op
   defmodule Clean do
     @moduledoc false
     defstruct [:task_id, :module, :payload, :cluster_affinity, :space_affinity, :agent_affinity]
   end
 
+  # planned -
   # for scheduling purposes
   defmodule Pause do
     @moduledoc false
     defstruct [:task_id]
   end
 
+  # planned
   defmodule Resume do
     @moduledoc false
     defstruct [:task_id]
   end
 
+  # planned
   defmodule Terminate do
     @moduledoc false
     defstruct [:task_id]
@@ -49,16 +54,19 @@ defmodule Stc.Op do
     defstruct [:programs]
   end
 
+  # planned
   defmodule Wait do
     @moduledoc false
     defstruct [:task_id, :continuation]
   end
 
+  # planned
   defmodule OnFailure do
     @moduledoc false
     defstruct [:task_id, :handler, :continuation]
   end
 
+  # planned
   defmodule EmitEvent do
     @moduledoc false
     defstruct [:event, :continuation]

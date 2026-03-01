@@ -117,6 +117,9 @@ defmodule Stc.Interpreter.Distributed do
            module: module,
            payload: payload,
            policies: policies,
+           space_affinity: space_affinity,
+           cluster_affinity: cluster_affinity,
+           scheduler_affinity: scheduler_affinity,
            content_hash: hash
          },
          wf_id
@@ -142,6 +145,9 @@ defmodule Stc.Interpreter.Distributed do
             module: module,
             payload: payload,
             policies: policies,
+            space_affinity: space_affinity,
+            cluster_affinity: cluster_affinity,
+            scheduler_affinity: scheduler_affinity,
             content_hash: hash,
             timestamp: DateTime.utc_now()
           })
@@ -151,7 +157,15 @@ defmodule Stc.Interpreter.Distributed do
   end
 
   defp emit_ready(
-         %{task_id: task_id, module: module, payload: payload, policies: policies},
+         %{
+           task_id: task_id,
+           module: module,
+           payload: payload,
+           policies: policies,
+           space_affinity: space_affinity,
+           cluster_affinity: cluster_affinity,
+           scheduler_affinity: scheduler_affinity
+         },
          wf_id
        ) do
     event = %Stc.Event.Ready{
@@ -160,6 +174,9 @@ defmodule Stc.Interpreter.Distributed do
       module: module,
       payload: payload,
       policies: policies,
+      space_affinity: space_affinity,
+      cluster_affinity: cluster_affinity,
+      scheduler_affinity: scheduler_affinity,
       timestamp: DateTime.utc_now()
     }
 
@@ -288,8 +305,17 @@ defmodule Stc.Interpreter.Distributed do
   defp extract_ready_tasks({:pure, _}, _workflow_id), do: []
 
   defp extract_ready_tasks(
-         {:free, %Op.Run{task_id: id, module: mod, payload: p, policies: policies, store: true},
-          _cont_fn},
+         {:free,
+          %Op.Run{
+            task_id: id,
+            module: mod,
+            payload: p,
+            policies: policies,
+            space_affinity: space_affinity,
+            cluster_affinity: cluster_affinity,
+            scheduler_affinity: scheduler_affinity,
+            store: true
+          }, _cont_fn},
          _workflow_id
        ) do
     task_id = id || Ecto.UUID.generate()
@@ -300,13 +326,25 @@ defmodule Stc.Interpreter.Distributed do
         module: mod,
         payload: p,
         policies: policies,
+        space_affinity: space_affinity,
+        cluster_affinity: cluster_affinity,
+        scheduler_affinity: scheduler_affinity,
         content_hash: TaskStore.content_hash(mod, p)
       }
     ]
   end
 
   defp extract_ready_tasks(
-         {:free, %Op.Run{task_id: nil, module: mod, payload: p, policies: policies}, _cont_fn},
+         {:free,
+          %Op.Run{
+            task_id: nil,
+            module: mod,
+            payload: p,
+            policies: policies,
+            space_affinity: space_affinity,
+            cluster_affinity: cluster_affinity,
+            scheduler_affinity: scheduler_affinity
+          }, _cont_fn},
          _workflow_id
        ) do
     [
@@ -315,16 +353,39 @@ defmodule Stc.Interpreter.Distributed do
         module: mod,
         payload: p,
         policies: policies,
+        space_affinity: space_affinity,
+        cluster_affinity: cluster_affinity,
+        scheduler_affinity: scheduler_affinity,
         content_hash: nil
       }
     ]
   end
 
   defp extract_ready_tasks(
-         {:free, %Op.Run{task_id: id, module: mod, payload: p, policies: policies}, _cont_fn},
+         {:free,
+          %Op.Run{
+            task_id: id,
+            module: mod,
+            payload: p,
+            policies: policies,
+            space_affinity: space_affinity,
+            cluster_affinity: cluster_affinity,
+            scheduler_affinity: scheduler_affinity
+          }, _cont_fn},
          _workflow_id
        ) do
-    [%{task_id: id, module: mod, payload: p, policies: policies, content_hash: nil}]
+    [
+      %{
+        task_id: id,
+        module: mod,
+        payload: p,
+        policies: policies,
+        space_affinity: space_affinity,
+        cluster_affinity: cluster_affinity,
+        scheduler_affinity: scheduler_affinity,
+        content_hash: nil
+      }
+    ]
   end
 
   defp extract_ready_tasks(

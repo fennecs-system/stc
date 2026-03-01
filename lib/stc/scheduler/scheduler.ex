@@ -96,7 +96,10 @@ defmodule Stc.Scheduler do
       pending_ready: [],
       reply_buffer: reply_buffer_pid,
       scheduler_tick_rate_ms:
-        Keyword.get(opts, :scheduler_tick_rate_ms, @default_scheduler_tick_rate_ms)
+        Keyword.get(opts, :scheduler_tick_rate_ms, @default_scheduler_tick_rate_ms),
+      tags: Keyword.get(opts, :tags, []),
+      space_id: Keyword.get(opts, :space_id, nil),
+      cluster_id: Keyword.get(opts, :cluster_id, nil)
     }
 
     {:ok, schedule_event_loop(state)}
@@ -178,11 +181,15 @@ defmodule Stc.Scheduler do
 
   @spec dispatch_event(struct(), State.t()) :: State.t()
   defp dispatch_event(%Stc.Event.Ready{} = event, %State{} = state) do
-    case try_schedule_ready(event, state) do
-      {:ok, new_state} -> new_state
-      {:error, :no_capacity, new_state} -> buffer_pending(new_state, event)
-      {:error, :rejected, new_state} -> buffer_pending(new_state, event)
-      {:error, _other, new_state} -> new_state
+    if matches_this_scheduler?(event, state) do
+      case try_schedule_ready(event, state) do
+        {:ok, new_state} -> new_state
+        {:error, :no_capacity, new_state} -> buffer_pending(new_state, event)
+        {:error, :rejected, new_state} -> buffer_pending(new_state, event)
+        {:error, _other, new_state} -> new_state
+      end
+    else
+      state
     end
   end
 
@@ -193,6 +200,25 @@ defmodule Stc.Scheduler do
   defp dispatch_event(%Stc.Event.Started{}, %State{} = state), do: state
 
   defp dispatch_event(_unknown, %State{} = state), do: state
+
+  @spec matches_this_scheduler?(Stc.Event.Ready.t(), State.t()) :: boolean()
+  defp matches_this_scheduler?(event, state) do
+    tags_match?(event.scheduler_affinity, state.tags) and
+      space_match?(event.space_affinity, state.space_id) and
+      cluster_match?(event.cluster_affinity, state.cluster_id)
+  end
+
+  defp tags_match?(nil, _), do: true
+  defp tags_match?(_, []), do: false
+  defp tags_match?(task_tags, scheduler_tags), do: Enum.any?(task_tags, &(&1 in scheduler_tags))
+
+  defp space_match?(nil, _), do: true
+  defp space_match?(_, nil), do: false
+  defp space_match?(a, b), do: a == b
+
+  defp cluster_match?(nil, _), do: true
+  defp cluster_match?(_, nil), do: false
+  defp cluster_match?(a, b), do: a == b
 
   @spec try_schedule_ready(Stc.Event.Ready.t(), State.t()) ::
           {:ok, State.t()}
