@@ -297,7 +297,8 @@ defmodule Stc.Scheduler do
       reply_buffer: state.reply_buffer,
       attempt: 1,
       cluster_id: nil,
-      space_id: nil
+      space_id: nil,
+      content_hash: event.content_hash
     }
 
     case Executor.start_link(config) do

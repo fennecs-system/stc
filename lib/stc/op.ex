@@ -12,6 +12,7 @@ defmodule Stc.Op do
       :cluster_affinity,
       :space_affinity,
       :agent_affinity,
+      store: false,
       policies: %Stc.Task.Policy{}
     ]
   end

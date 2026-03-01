@@ -12,6 +12,7 @@ defmodule Stc.Event do
             space_affinity: term(),
             timestamp: DateTime.t() | nil,
             scheduled?: boolean() | nil,
+            content_hash: String.t() | nil,
             policies: Stc.Task.Policy.t() | nil
           }
 
@@ -23,6 +24,7 @@ defmodule Stc.Event do
       :space_affinity,
       :timestamp,
       :scheduled?,
+      content_hash: nil,
       policies: nil
     ]
   end

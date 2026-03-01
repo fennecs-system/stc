@@ -43,6 +43,7 @@ defmodule Stc.Interpreter.Distributed do
   alias Stc.Op
   alias Stc.Program.Store, as: ProgramStore
   alias Stc.Task.Result
+  alias Stc.Task.Store, as: TaskStore
 
   require Logger
 
@@ -92,9 +93,21 @@ defmodule Stc.Interpreter.Distributed do
 
     case ProgramStore.get(wf_id) do
       {:ok, program} ->
-        {next_program, ready_tasks} = next(program, task_id, result, wf_id)
-        ProgramStore.put(wf_id, next_program)
-        Enum.each(ready_tasks, &emit_ready(&1, wf_id))
+        try do
+          {next_program, ready_tasks} = next(program, task_id, result, wf_id)
+          ProgramStore.put(wf_id, next_program)
+          Enum.each(ready_tasks, &emit_ready(&1, wf_id))
+        rescue
+          err ->
+            Logger.error(
+              "Distributed walker: raised advancing workflow_id=#{wf_id}, task_id=#{task_id}:\n#{Exception.format(:error, err, __STACKTRACE__)}"
+            )
+        catch
+          kind, payload ->
+            Logger.error(
+              "Distributed walker: threw advancing workflow_id=#{wf_id}, task_id=#{task_id}:\n#{Exception.format(kind, payload, __STACKTRACE__)}"
+            )
+        end
 
       {:error, :not_found} ->
         Logger.warning(
@@ -104,6 +117,47 @@ defmodule Stc.Interpreter.Distributed do
   end
 
   @spec emit_ready(map(), String.t()) :: :ok
+
+  # Store-backed task: check cache first; emit Completed on hit, Ready on miss.
+  defp emit_ready(
+         %{
+           task_id: task_id,
+           module: module,
+           payload: payload,
+           policies: policies,
+           content_hash: hash
+         },
+         wf_id
+       )
+       when is_binary(hash) do
+    case TaskStore.get(hash) do
+      {:ok, cached_result} ->
+        {:ok, _} =
+          Store.append(%Stc.Event.Completed{
+            workflow_id: wf_id,
+            task_id: task_id,
+            result: cached_result,
+            timestamp: DateTime.utc_now()
+          })
+
+        :ok
+
+      {:error, :not_found} ->
+        {:ok, _} =
+          Store.append(%Stc.Event.Ready{
+            workflow_id: wf_id,
+            task_id: task_id,
+            module: module,
+            payload: payload,
+            policies: policies,
+            content_hash: hash,
+            timestamp: DateTime.utc_now()
+          })
+
+        :ok
+    end
+  end
+
   defp emit_ready(
          %{task_id: task_id, module: module, payload: payload, policies: policies},
          wf_id
@@ -242,17 +296,43 @@ defmodule Stc.Interpreter.Distributed do
   defp extract_ready_tasks({:pure, _}, _workflow_id), do: []
 
   defp extract_ready_tasks(
+         {:free, %Op.Run{task_id: id, module: mod, payload: p, policies: policies, store: true},
+          _cont_fn},
+         _workflow_id
+       ) do
+    task_id = id || Ecto.UUID.generate()
+
+    [
+      %{
+        task_id: task_id,
+        module: mod,
+        payload: p,
+        policies: policies,
+        content_hash: TaskStore.content_hash(mod, p)
+      }
+    ]
+  end
+
+  defp extract_ready_tasks(
          {:free, %Op.Run{task_id: nil, module: mod, payload: p, policies: policies}, _cont_fn},
          _workflow_id
        ) do
-    [%{task_id: Ecto.UUID.generate(), module: mod, payload: p, policies: policies}]
+    [
+      %{
+        task_id: Ecto.UUID.generate(),
+        module: mod,
+        payload: p,
+        policies: policies,
+        content_hash: nil
+      }
+    ]
   end
 
   defp extract_ready_tasks(
          {:free, %Op.Run{task_id: id, module: mod, payload: p, policies: policies}, _cont_fn},
          _workflow_id
        ) do
-    [%{task_id: id, module: mod, payload: p, policies: policies}]
+    [%{task_id: id, module: mod, payload: p, policies: policies, content_hash: nil}]
   end
 
   defp extract_ready_tasks(

@@ -24,6 +24,7 @@ defmodule Stc.Program do
        cluster_affinity: Keyword.get(opts, :cluster_affinity, nil),
        space_affinity: Keyword.get(opts, :space_affinity, nil),
        agent_affinity: Keyword.get(opts, :agent_affinity, nil),
+       store: Keyword.get(opts, :store, false),
        policies: build_policies(opts)
      }, fn result -> pure(result) end}
   end
@@ -37,6 +38,7 @@ defmodule Stc.Program do
        cluster_affinity: Keyword.get(opts, :cluster_affinity, nil),
        space_affinity: Keyword.get(opts, :space_affinity, nil),
        agent_affinity: Keyword.get(opts, :agent_affinity, nil),
+       store: Keyword.get(opts, :store, false),
        policies: build_policies(opts)
      }, fn result -> pure(result) end}
   end
