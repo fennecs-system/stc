@@ -175,7 +175,8 @@ defmodule Stc.Scheduler do
         {:noreply, state}
 
       {task_id, _pid} ->
-        new_state =
+        %State{} =
+          new_state =
           state
           |> Runtime.teardown_task(task_id)
           |> Map.update!(:preempting_task_ids, &if(&1, do: MapSet.delete(&1, task_id), else: &1))
