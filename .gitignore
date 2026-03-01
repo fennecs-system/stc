@@ -25,3 +25,6 @@ stc-*.tar
 #
 .cache/
 .postgres/
+
+# ignore some docs
+docs/s3_download_index.md
