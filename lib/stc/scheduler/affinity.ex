@@ -7,11 +7,11 @@ defmodule Stc.Scheduler.Affinity do
   `matches_scheduler?/2` checks whether a `Ready` or `Pending` event should be
   handled by a given scheduler instance, based on three dimensions:
 
-  - `scheduler_affinity` (tags) — a task with tags is only accepted by a scheduler
-    that shares at least one tag. A task with no tags is accepted by any scheduler.
+  - `scheduler_affinity` (tags) - a list of atoms, and a task with tags is only accepted by a scheduler
+    that shares at least one tag. A task with no tags is accepted by any scheduler which doesnt have tags.
     An untagged scheduler will not pick up tagged tasks.
-  - `space_affinity` — exact match against `State.space_id`; nil on either side means any.
-  - `cluster_affinity` — exact match against `State.cluster_id`; nil on either side means any.
+  - `space_affinity` - tasks with a space id must match `State.space_id` to be scheduled on a scheduler with a space id; nil on either side means any.
+  - `cluster_affinity` - tasks with a cluster id must match `State.cluster_id` to be scheduled on a scheduler with a cluster id; nil on either side means any.
 
   ## Admit policies
 

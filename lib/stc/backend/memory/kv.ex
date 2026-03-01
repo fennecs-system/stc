@@ -18,9 +18,10 @@ defmodule Stc.Backend.Memory.KV do
   ## Usage
 
   Start once in your supervision tree (typically via `Stc.Backend.Supervisor`):
-
+  ```
       children = [Stc.Backend.Memory.KV]
       Supervisor.start_link(children, strategy: :one_for_one)
+  ```
   """
 
   @behaviour Stc.Backend.KV

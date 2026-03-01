@@ -26,7 +26,10 @@ defmodule Stc.Scheduler.Algorithm do
   # Required callbacks -
   #
 
-  @doc "Refreshes the agent pool in state (e.g. from a registry or external API)."
+  @doc "Refreshes the agent pool in state (e.g. from a registry or external API).
+
+  Agents must have three states - :active, :unhealthy, :unavailable
+  "
   @callback refresh_agent_pool(state :: State.t()) :: State.t()
 
   @doc "Selects which agents from `free_agents` should run `event`."
@@ -36,10 +39,18 @@ defmodule Stc.Scheduler.Algorithm do
               state :: State.t()
             ) :: {:ok, [Stc.Agent.t()]} | {:error, :no_agents_available}
 
-  @doc "Reorders the batch of fetched events before dispatch. Default: identity."
+  @doc "Reorders the batch of fetched events before dispatch. Default: identity.
+
+  Useful for prioritising work - if some events are more important, they can be scheduled to run first,
+  and the scheduler tries to assign work in order of the returned list.
+  "
   @callback schedule_event_order(events :: [struct()], state :: State.t()) :: [struct()]
 
-  @doc "Processes any buffered agent replies. Default: no-op."
+  @doc "Processes any buffered agent replies. Default: no-op.
+
+  Useful for side effects from agent messages, which usually get sent to the
+  executor. Eg trigger some billing hooks.
+  "
   @callback process_agent_buffer(state :: State.t()) :: State.t()
 
   #
@@ -50,6 +61,8 @@ defmodule Stc.Scheduler.Algorithm do
   Returns `true` if `agent` satisfies the requirements of `event`.
 
   Called before agent capacity checks. Default: always `true`.
+
+  Can check agents have the required features, status, or affinity.
   """
   @callback agent_matches_requirements?(
               agent :: Stc.Agent.t(),
@@ -57,9 +70,9 @@ defmodule Stc.Scheduler.Algorithm do
             ) :: boolean()
 
   @doc """
-  Returns `true` if `agent` may accept `event` even when already at capacity.
+  Override to return `true` if `agent` may accept `event` even when already at capacity.
 
-  Default: always `false`.
+  Default: always `false` - agents uniquely run one task.
   """
   @callback can_oversubscribe?(
               agent :: Stc.Agent.t(),
@@ -67,7 +80,11 @@ defmodule Stc.Scheduler.Algorithm do
               state :: State.t()
             ) :: boolean()
 
-  @doc "Reconciles stale agents (e.g. timed-out or unresponsive). Default: no-op."
+  @doc "Reconciles stale agents (e.g. timed-out or unresponsive). Default: no-op.
+
+  Useful for doing some sort of reconciliation on unhealthy agents - maybe restart,
+  maybe try spawn new agents, etc.
+  "
   @callback reconcile_stale_agents(state :: State.t()) :: State.t()
 
   @doc """
@@ -77,8 +94,8 @@ defmodule Stc.Scheduler.Algorithm do
   rescheduling on fresh agents. Return `{:fail, task_id}` to emit a hard failure
   (`Failed{reason: {:agent_unavailable, agent_id}}`).
 
-  Default: always reschedules. The existing `Pending` mechanism handles the case
-  where no agents are immediately available — the task waits until capacity returns.
+  Default: always reschedules a task. Tasks that fail become `Pending`, and so
+  when there are no agents immediately available; the task waits until capacity returns.
   Override to return `:fail` when the space definitively has no spare agents.
   """
   @callback on_agent_eviction(

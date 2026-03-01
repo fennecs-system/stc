@@ -24,15 +24,17 @@ defmodule Stc.Backend.Memory.EventLog do
 
   ## Atomicity
 
-  All operations are serialised through a single GenServer process, so locking is
-  trivially atomic — no CAS or transaction overhead required.
+  All operations are serialised through a single GenServer process, so locking is atomic,
+  there are no CAS or transaction overhead required. However the memory store is meant
+  more for development or testing.
 
   ## Usage
 
   Start once in your supervision tree (typically via `Stc.Backend.Supervisor`):
-
+  ```
       children = [Stc.Backend.Memory.EventLog]
       Supervisor.start_link(children, strategy: :one_for_one)
+  ```
   """
 
   @behaviour Stc.Backend.EventLog

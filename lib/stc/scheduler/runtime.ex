@@ -4,9 +4,13 @@ defmodule Stc.Scheduler.Runtime do
 
   ## Agent pool
 
+  Assumes agents have three statuses - :active, :unhealthy, :unavailable
+
   `state.agent_pool` is a `%{status :: atom() => [Agent.t()]}` map grouping agents by their
   current status. Active agents are under the `:active` key; unhealthy or unavailable agents
-  appear under their respective status keys. `select_agents_for_event` reads
+  appear under their respective status keys.
+
+  `select_agents_for_event` reads
   `state.agent_pool[:active]` directly, so algorithm implementors never need to filter by
   status themselves. `reconcile_stale_agents` receives the full map and can inspect any bucket.
 
@@ -31,13 +35,13 @@ defmodule Stc.Scheduler.Runtime do
   that a preempted executor that dies before its `Preempted` event is read still gets its
   `Ready` re-emitted.
 
-  ## Agent status semantics
+  ## Agent status
 
-  - `:active`      — healthy, eligible for new tasks
-  - `:unhealthy`   — degraded but possibly transient; tolerated for
-                     `unhealthy_toleration_ms` (default: 5 minutes) before eviction
-  - `:unavailable` — definitively gone; tolerated for `unavailable_toleration_ms`
-                     (default: 0 ms — immediate eviction)
+  - `:active`      = healthy, eligible for new tasks
+  - `:unhealthy`   = degraded but possibly transient; tolerated for
+                     `unhealthy_toleration_ms` (default: 1 minutes) before eviction
+  - `:unavailable` = definitively gone; tolerated for `unavailable_toleration_ms`
+                     (default: 0 ms = immediate eviction).
   - Any other status, or absent from the pool entirely, is treated as `:unavailable`.
   """
 
@@ -45,7 +49,7 @@ defmodule Stc.Scheduler.Runtime do
   alias Stc.ReplyBuffer
   alias Stc.Scheduler.State
 
-  @default_unhealthy_toleration_ms :timer.minutes(5)
+  @default_unhealthy_toleration_ms :timer.minutes(1)
   @default_unavailable_toleration_ms 0
 
   @doc """

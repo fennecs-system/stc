@@ -6,9 +6,9 @@ defmodule Stc.Task.AgentHealthCheck do
   window before acting. Mirrors Kubernetes taint-based eviction:
 
   - `:unhealthy` agents (not-ready) are tolerated for `unhealthy_toleration_ms`
-    before their tasks are evicted (default: 5 minutes).
+    before their tasks are evicted (default: 1 minutes).
   - `:unavailable` agents (unreachable / gone) are tolerated for
-    `unavailable_toleration_ms` before eviction (default: 0 ms — immediate).
+    `unavailable_toleration_ms` before eviction (default: 0 ms, immediate eviction).
 
   Unlike `LivenessCheck` (which the task module drives against its own process),
   this check is driven entirely by the scheduler from agent pool state. It is
@@ -16,7 +16,7 @@ defmodule Stc.Task.AgentHealthCheck do
   running it has dropped out.
   """
 
-  defstruct unhealthy_toleration_ms: :timer.minutes(5),
+  defstruct unhealthy_toleration_ms: :timer.minutes(1),
             unavailable_toleration_ms: 0
 
   @type t :: %__MODULE__{
