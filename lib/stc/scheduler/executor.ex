@@ -14,7 +14,11 @@ defmodule Stc.Scheduler.Executor.State do
           space_id: String.t() | nil,
           startup_timeout_ref: reference() | nil,
           task_timeout_ref: reference() | nil,
-          continue_check_refs: [reference()]
+          continue_check_refs: [reference()],
+          # Handle returned by the task module for async tasks; used by liveness checks.
+          async_handle: term(),
+          # Monotonic millisecond timestamps of recent liveness-check failures.
+          liveness_check_failures: [integer()]
         }
 
   defstruct [
@@ -28,9 +32,11 @@ defmodule Stc.Scheduler.Executor.State do
     :attempt,
     :cluster_id,
     :space_id,
+    async_handle: nil,
     startup_timeout_ref: nil,
     task_timeout_ref: nil,
-    continue_check_refs: []
+    continue_check_refs: [],
+    liveness_check_failures: []
   ]
 end
 
@@ -75,8 +81,10 @@ defmodule Stc.Scheduler.Executor do
   alias Stc.Task
   alias Stc.Task.Context
   alias Stc.Task.Policy
+  alias Stc.Task.Policy.Retry
   alias Stc.Task.Result
   alias Stc.Task.Spec
+  alias Stc.Task.Spec.LivenessCheck
 
   require Logger
 
@@ -102,15 +110,15 @@ defmodule Stc.Scheduler.Executor do
     context = to_context(state)
 
     case find_stale_handle(state.task_id, state.workflow_id) do
-      {:ok, handle} -> dispatch_resume(state, handle, context)
-      :not_found -> dispatch_start(state, context)
+      {:ok, handle} -> spawn_resume(state, handle, context)
+      :not_found -> spawn_start(state, context)
     end
   end
 
   # Resume a task that was started/running before a crash.
-  @spec dispatch_resume(State.t(), term(), Context.t()) ::
+  @spec spawn_resume(State.t(), term(), Context.t()) ::
           {:noreply, State.t()} | {:stop, :normal, State.t()}
-  defp dispatch_resume(%State{} = state, handle, context) do
+  defp spawn_resume(%State{} = state, handle, context) do
     if Task.resumable?(state.task_spec.module) do
       case state.task_spec.module.resume(state.task_spec, handle, context) do
         {:ok, task_result} ->
@@ -118,7 +126,9 @@ defmodule Stc.Scheduler.Executor do
           {:stop, :normal, state}
 
         {:started, new_handle} ->
+          state = %State{state | async_handle: new_handle}
           state = maybe_spawn_timeouts(state)
+          state = spawn_liveness_checks(state)
           ReplyBuffer.register_executor(state.reply_buffer, state.task_id, self())
           emit_started(state, new_handle)
           {:noreply, state}
@@ -129,20 +139,22 @@ defmodule Stc.Scheduler.Executor do
     else
       # No resume: clean up previous attempt then start fresh.
       Task.clean(state.task_spec.module, state.task_spec, context)
-      dispatch_start(state, context)
+      spawn_start(state, context)
     end
   end
 
-  @spec dispatch_start(State.t(), Context.t()) ::
+  @spec spawn_start(State.t(), Context.t()) ::
           {:noreply, State.t()} | {:stop, :normal, State.t()}
-  defp dispatch_start(%State{} = state, context) do
+  defp spawn_start(%State{} = state, context) do
     case state.task_spec.module.start(state.task_spec, context) do
       {:ok, task_result} ->
         emit_completion(state, task_result)
         {:stop, :normal, state}
 
       {:started, handle} ->
+        state = %State{state | async_handle: handle}
         state = maybe_spawn_timeouts(state)
+        state = spawn_liveness_checks(state)
         ReplyBuffer.register_executor(state.reply_buffer, state.task_id, self())
         emit_started(state, handle)
         {:noreply, state}
@@ -150,6 +162,17 @@ defmodule Stc.Scheduler.Executor do
       {:error, reason} ->
         handle_failure(state, reason, context)
     end
+  end
+
+  @spec spawn_liveness_checks(State.t()) :: State.t()
+  defp spawn_liveness_checks(%State{task_spec: %Spec{liveness_check: nil}} = state), do: state
+
+  defp spawn_liveness_checks(%State{task_spec: %Spec{module: module}} = state) do
+    if function_exported?(module, :running?, 3) do
+      Process.send_after(self(), :liveness_check, state.task_spec.liveness_check.interval_ms)
+    end
+
+    state
   end
 
   # Returns {:ok, handle} when this task has a Started event with no matching
@@ -237,6 +260,36 @@ defmodule Stc.Scheduler.Executor do
         Task.clean(state.task_spec.module, state.task_spec, context)
         emit_failure(state, {:cancelled, reason}, false)
         {:stop, :normal, state}
+    end
+  end
+
+  @impl true
+  def handle_info(:liveness_check, %State{} = state) do
+    context = to_context(state)
+    %Spec{liveness_check: %LivenessCheck{interval_ms: interval, max_failures: max, window_ms: window}} = state.task_spec
+
+    now = System.monotonic_time(:millisecond)
+
+    state =
+      case Task.running?(state.task_spec.module, state.task_spec, state.async_handle, context) do
+        :ok ->
+          # Clear any stale failures on a successful probe.
+          %State{state | liveness_check_failures: []}
+
+        {:not_running, reason} ->
+          Logger.warning("Task #{state.task_id} liveness check failed: #{inspect(reason)}")
+          recent = Enum.filter(state.liveness_check_failures, &(now - &1 < window))
+          %State{state | liveness_check_failures: [now | recent]}
+      end
+
+    if length(state.liveness_check_failures) >= max do
+      state = cancel_continue_checks(state)
+      Task.clean(state.task_spec.module, state.task_spec, context)
+      emit_failure(state, :liveness_check_failed, true)
+      {:stop, :normal, state}
+    else
+      Process.send_after(self(), :liveness_check, interval)
+      {:noreply, state}
     end
   end
 
@@ -337,7 +390,7 @@ defmodule Stc.Scheduler.Executor do
 
     if retriable? do
       emit_failure(state, reason, true)
-      backoff_ms = state.task_spec.policies.retry.backoff_ms
+      backoff_ms = Retry.backoff_ms(state.task_spec.policies.retry, state.attempt)
       Process.send_after(self(), :start, backoff_ms)
       {:noreply, %State{state | attempt: state.attempt + 1}}
     else

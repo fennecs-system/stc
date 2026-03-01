@@ -29,7 +29,20 @@ defmodule Stc.Task do
 
   @callback retriable?(reason :: any()) :: boolean()
 
-  @optional_callbacks [resume: 3, retriable?: 1, clean: 2]
+  @doc """
+  Liveness probe for async tasks.
+
+  Called periodically by the executor while the task is running. Return `:ok`
+  if the task is still alive, or `{:not_running, reason}` if it appears dead
+  (e.g. the remote container has stopped, the WebSocket is closed, etc.).
+
+  If not implemented the executor skips liveness checking regardless of the
+  `liveness_check` setting on the spec.
+  """
+  @callback running?(spec :: Spec.t(), handle :: any(), context :: Context.t()) ::
+              :ok | {:not_running, reason :: any()}
+
+  @optional_callbacks [resume: 3, retriable?: 1, clean: 2, running?: 3]
 
   @doc "Returns true if the task module implements `resume/3`."
   @spec resumable?(module()) :: boolean()
@@ -52,6 +65,16 @@ defmodule Stc.Task do
       module.retriable?(reason)
     else
       false
+    end
+  end
+
+  @doc "Calls `running?/3` if implemented, otherwise returns `:ok`."
+  @spec running?(module(), Spec.t(), any(), Context.t()) :: :ok | {:not_running, any()}
+  def running?(module, spec, handle, context) do
+    if function_exported?(module, :running?, 3) do
+      module.running?(spec, handle, context)
+    else
+      :ok
     end
   end
 end

@@ -2,13 +2,13 @@ defmodule Stc.Task.Policy.Continue do
   @moduledoc """
   Behaviour for runtime policies evaluated by the scheduler each tick while a task is running.
 
-  Continue policies are for costs or conditions that can't be fully known at admission time —
+  Continue policies are for costs or conditions that can't be fully known at admission time;
   for example, egress charges that accumulate during execution, or budget changes caused by
   other jobs failing mid-flight.
 
   If any policy returns `{:cancel, reason}`, the scheduler cancels the executor (calling
   `Task.clean/3` and emitting a `Cancelled` event). Most tasks won't need continue policies;
-  budget checks that can be made upfront belong in `Stc.Task.Policy.Admit` instead.
+  checks that can be made upfront belong in an `Stc.Task.Policy.Admit` policy instead.
 
   ## Example
 
@@ -43,7 +43,7 @@ defmodule Stc.Task.Policy.Continue do
               :ok | {:cancel, reason :: term()}
 
   @doc """
-  How often this policy should be checked, in milliseconds. Defaults to 1000ms.
+  How often this policy should be checked, in milliseconds. Defaults to 1000ms - :timer.seconds(1).
 
   Expensive policies (e.g. external service calls) should return a larger value.
   Each policy is scheduled independently, so a slow policy does not affect the

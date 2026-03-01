@@ -1,14 +1,17 @@
 defmodule Stc.Task.Policy.Admit do
   @moduledoc """
-  Behaviour for admission policies evaluated by the scheduler before a task is dispatched.
+  Behaviour for `admission` policies evaluated by the scheduler before a task is dispatched.
 
-  Admission policies are declared as structs in `admit_policies: [...]` on `Program.run/4`.
+  Admission policies are structs declared in `admit_policies: [...]` on `Program.run/4`.
   They flow through `Op.Run` and `Event.Ready` to the scheduler, which evaluates them in
   order before spawning an executor.
 
-  If any policy returns `{:reject, reason}`, the task is buffered in `pending_ready` and
-  retried on the next scheduler tick — the same path as when no agents have capacity. This
-  means a rejected task will be retried automatically, so policies that reserve a shared
+  Admit policies must return :ok, or {:reject, reason}
+
+  If a policy returns `{:reject, reason}`, the task is buffered as a `pending` task and
+  retried on the next scheduler tick. This is equivalent to when agents have no capacity.
+
+  This means a rejected task will be retried automatically, so policies that reserve a shared
   resource (e.g. budget) will naturally unblock once other tasks complete and release their
   reservations.
 
