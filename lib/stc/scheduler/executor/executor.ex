@@ -476,8 +476,8 @@ defmodule Stc.Scheduler.Executor do
     if retriable? do
       emit_failure(state, reason, true)
       backoff_ms = Retry.backoff_ms(state.task_spec.policies.retry, state.attempt)
-      Process.send_after(self(), :start, backoff_ms)
-      {:noreply, %State{state | attempt: state.attempt + 1}}
+      Process.sleep(backoff_ms)
+      {:noreply, %State{state | attempt: state.attempt + 1}, {:continue, :start}}
     else
       state = cancel_continue_checks(state)
       emit_failure(state, reason, false)
@@ -510,30 +510,30 @@ defmodule Stc.Scheduler.Executor do
 
   @spec emit_preempted(State.t(), term()) :: :ok
   defp emit_preempted(%State{} = state, reason) do
-    {:ok, _cursor} =
-      Store.append(%Event.Preempted{
-        workflow_id: state.workflow_id,
-        task_id: state.task_id,
-        agent_ids: state.agent_ids,
-        reason: reason,
-        timestamp: DateTime.utc_now()
-      })
-
-    :ok
+    case Store.append(%Event.Preempted{
+           workflow_id: state.workflow_id,
+           task_id: state.task_id,
+           agent_ids: state.agent_ids,
+           reason: reason,
+           timestamp: DateTime.utc_now()
+         }) do
+      {:ok, _} -> :ok
+      {:error, err} -> exit({:emit_failed, err})
+    end
   end
 
   @spec emit_started(State.t(), term()) :: :ok
   defp emit_started(%State{} = state, handle) do
-    {:ok, _cursor} =
-      Store.append(%Event.Started{
-        workflow_id: state.workflow_id,
-        task_id: state.task_id,
-        agent_ids: state.agent_ids,
-        async_handle: handle,
-        timestamp: DateTime.utc_now()
-      })
-
-    :ok
+    case Store.append(%Event.Started{
+           workflow_id: state.workflow_id,
+           task_id: state.task_id,
+           agent_ids: state.agent_ids,
+           async_handle: handle,
+           timestamp: DateTime.utc_now()
+         }) do
+      {:ok, _} -> :ok
+      {:error, err} -> exit({:emit_failed, err})
+    end
   end
 
   @spec emit_completion(State.t(), term()) :: :ok
@@ -550,32 +550,32 @@ defmodule Stc.Scheduler.Executor do
 
   @spec do_emit_completion(State.t(), term()) :: :ok
   defp do_emit_completion(%State{} = state, result) do
-    {:ok, _cursor} =
-      Store.append(%Event.Completed{
-        workflow_id: state.workflow_id,
-        task_id: state.task_id,
-        agent_ids: state.agent_ids,
-        result: result,
-        attempt: state.attempt,
-        timestamp: DateTime.utc_now()
-      })
-
-    :ok
+    case Store.append(%Event.Completed{
+           workflow_id: state.workflow_id,
+           task_id: state.task_id,
+           agent_ids: state.agent_ids,
+           result: result,
+           attempt: state.attempt,
+           timestamp: DateTime.utc_now()
+         }) do
+      {:ok, _} -> :ok
+      {:error, err} -> exit({:emit_failed, err})
+    end
   end
 
   @spec emit_failure(State.t(), term(), boolean()) :: :ok
   defp emit_failure(%State{} = state, reason, retriable) do
-    {:ok, _cursor} =
-      Store.append(%Event.Failed{
-        workflow_id: state.workflow_id,
-        task_id: state.task_id,
-        agent_ids: state.agent_ids,
-        reason: reason,
-        retriable: retriable,
-        attempt: state.attempt,
-        timestamp: DateTime.utc_now()
-      })
-
-    :ok
+    case Store.append(%Event.Failed{
+           workflow_id: state.workflow_id,
+           task_id: state.task_id,
+           agent_ids: state.agent_ids,
+           reason: reason,
+           retriable: retriable,
+           attempt: state.attempt,
+           timestamp: DateTime.utc_now()
+         }) do
+      {:ok, _} -> :ok
+      {:error, err} -> exit({:emit_failed, err})
+    end
   end
 end

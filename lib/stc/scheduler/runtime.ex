@@ -260,8 +260,6 @@ defmodule Stc.Scheduler.Runtime do
   end
 
   @spec remove_from_stopped(State.t(), String.t()) :: State.t()
-  defp remove_from_stopped(%State{stopped_task_ids: nil} = state, _task_id), do: state
-
   defp remove_from_stopped(%State{} = state, task_id) do
     %{state | stopped_task_ids: MapSet.delete(state.stopped_task_ids, task_id)}
   end

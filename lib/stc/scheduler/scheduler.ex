@@ -183,6 +183,7 @@ defmodule Stc.Scheduler do
     {:noreply, Runtime.handle_preempted(task_id, state)}
   end
 
+  @impl true
   def handle_info({:DOWN, _ref, :process, _pid, _reason}, %State{} = state) do
     {:noreply, state}
   end
@@ -296,12 +297,29 @@ defmodule Stc.Scheduler do
              State.t()}
   defp try_schedule_ready(%Stc.Event.Ready{} = event, %State{} = state) do
     with {:ok, locked_state} <- try_acquire_lock(event.task_id, state),
-         {:ok, agents} <- select_agents_for_event(event, locked_state),
+         {:ok, final_state} <- select_and_spawn(event, locked_state) do
+      {:ok, final_state}
+    else
+      {:error, :locked} ->
+        {:error, :locked, state}
+
+      {:error, reason, ls} ->
+        # Lock was acquired but no executor was spawned; release it so the task can be retried.
+        {:error, reason, Runtime.teardown_task(ls, event.task_id)}
+    end
+  end
+
+  # Runs the post-lock steps (agent selection, admit checks, executor spawn) as a unit.
+  # Returns {:error, reason, locked_state} on any failure so the caller can release the lock.
+  @spec select_and_spawn(Stc.Event.Ready.t(), State.t()) ::
+          {:ok, State.t()} | {:error, term(), State.t()}
+  defp select_and_spawn(%Stc.Event.Ready{} = event, %State{} = locked_state) do
+    with {:ok, agents} <- select_agents_for_event(event, locked_state),
          :ok <- Affinity.check_admit_policies(event, agents, locked_state),
          {:ok, final_state} <- spawn_executor(event, agents, locked_state) do
       {:ok, final_state}
     else
-      {:error, reason} -> {:error, reason, state}
+      {:error, reason} -> {:error, reason, locked_state}
     end
   end
 

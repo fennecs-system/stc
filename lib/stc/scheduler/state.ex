@@ -60,7 +60,7 @@ defmodule Stc.Scheduler.State do
           # workflow_id => MapSet of task_ids currently active; populated on spawn, pruned on completion.
           workflow_tasks: %{String.t() => MapSet.t(String.t())},
           # task_ids for which Stop has been seen; guards Ready/Pending dispatch.
-          stopped_task_ids: MapSet.t() | nil,
+          stopped_task_ids: MapSet.t(),
           # agent_id => {timer_ref, Agent.t()}; tracks health-toleration timers.
           agent_health_timers: %{String.t() => {reference(), Stc.Agent.t()}},
           # task_id => Event.Ready.t(); snapshot stored at spawn for re-emission on preemption.
@@ -87,9 +87,9 @@ defmodule Stc.Scheduler.State do
     :cluster_id,
     tags: [],
     workflow_tasks: %{},
-    stopped_task_ids: nil,
+    stopped_task_ids: MapSet.new(),
     agent_health_timers: %{},
     active_task_info: %{},
-    preempting_task_ids: nil
+    preempting_task_ids: MapSet.new()
   ]
 end
