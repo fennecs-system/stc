@@ -140,7 +140,8 @@ defmodule Stc.Interpreter do
             task_id: id,
             module: mod,
             payload: payload,
-            space_affinity: affinity
+            space_affinity: affinity,
+            policies: policies
           }, _cont_fn},
          context
        ) do
@@ -151,6 +152,7 @@ defmodule Stc.Interpreter do
       module: mod,
       payload: payload,
       space_affinity: affinity,
+      policies: policies,
       timestamp: DateTime.utc_now()
     }
 

@@ -31,7 +31,9 @@ defmodule Stc.Scheduler.State do
           # Ready events that couldn't be scheduled (no capacity); retried each tick.
           pending_ready: [Stc.Event.Ready.t()],
           # pid of this scheduler's ReplyBuffer
-          reply_buffer: pid()
+          reply_buffer: pid(),
+          # time in ms of tick rate - defaults to 1 sec
+          scheduler_tick_rate_ms: integer()
         }
 
   defstruct [
@@ -46,6 +48,7 @@ defmodule Stc.Scheduler.State do
     :event_loop_ref,
     :event_cursor,
     :reply_buffer,
+    :scheduler_tick_rate_ms,
     pending_ready: []
   ]
 end

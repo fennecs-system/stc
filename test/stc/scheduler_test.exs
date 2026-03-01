@@ -11,6 +11,10 @@ defmodule Stc.SchedulerTest do
   alias Stc.Scheduler
   alias Stc.Scheduler.Algorithm.LocalTestAlgorithm
   alias Stc.Task.TestAddTask
+  alias Stc.Task.TestAlwaysCancelPolicy
+  alias Stc.Task.TestSleepTask
+
+  @scheduler_opts [scheduler_tick_rate_ms: 100]
 
   setup do
     start_supervised!(
@@ -32,7 +36,7 @@ defmodule Stc.SchedulerTest do
     :ok
   end
 
-  defp assert_eventually(fun, timeout_ms \\ 10_000, interval_ms \\ 200) do
+  defp assert_eventually(fun, timeout_ms \\ 5_000, interval_ms \\ 50) do
     deadline = System.monotonic_time(:millisecond) + timeout_ms
     do_assert_eventually(fun, deadline, interval_ms)
   end
@@ -58,9 +62,7 @@ defmodule Stc.SchedulerTest do
   test "can start a scheduler" do
     {:ok, scheduler} =
       Scheduler.start_link(
-        algorithm: LocalTestAlgorithm,
-        id: "test_scheduler_1",
-        level: :local
+        [algorithm: LocalTestAlgorithm, id: "test_scheduler_1", level: :local] ++ @scheduler_opts
       )
 
     assert Process.alive?(scheduler)
@@ -69,11 +71,11 @@ defmodule Stc.SchedulerTest do
     # add1 = 1+1 = 2, add2 = 1+1 = 2, add3 = 2 + (2+1) = 5
     program =
       Program.parallel([
-        Program.run(TestAddTask, %{a: 1, b: 1}, :add1),
-        Program.run(TestAddTask, %{a: 1, b: 1}, :add2)
+        Program.run(TestAddTask, %{a: 1, b: 1}, "add1"),
+        Program.run(TestAddTask, %{a: 1, b: 1}, "add2")
       ])
       |> bind(fn [r1, r2] ->
-        Program.run(TestAddTask, %{a: r1, b: r2 + 1}, :add3)
+        Program.run(TestAddTask, %{a: r1, b: r2 + 1}, "add3")
       end)
 
     Interpreter.distributed(program, %{workflow_id: "test_workflow_1"})
@@ -86,17 +88,15 @@ defmodule Stc.SchedulerTest do
 
     results_by_task = Map.new(all_completed(), fn e -> {e.task_id, e.result.value} end)
 
-    assert results_by_task[:add1] == 2
-    assert results_by_task[:add2] == 2
-    assert results_by_task[:add3] == 5
+    assert results_by_task["add1"] == 2
+    assert results_by_task["add2"] == 2
+    assert results_by_task["add3"] == 5
   end
 
   test "keeps running an infinite job" do
     {:ok, scheduler} =
       Scheduler.start_link(
-        algorithm: LocalTestAlgorithm,
-        id: "test_scheduler_2",
-        level: :local
+        [algorithm: LocalTestAlgorithm, id: "test_scheduler_2", level: :local] ++ @scheduler_opts
       )
 
     assert Process.alive?(scheduler)
@@ -120,5 +120,22 @@ defmodule Stc.SchedulerTest do
     # A cycle should never reach a pure terminal state.
     {:ok, current_program} = ProgramStore.get("infinite_workflow_2")
     refute match?({:pure, _}, current_program)
+  end
+
+  test "continue policy cancels a long-running task" do
+    {:ok, _scheduler} =
+      Scheduler.start_link(
+        [algorithm: LocalTestAlgorithm, id: "test_scheduler_3", level: :local] ++ @scheduler_opts
+      )
+
+    program =
+      Program.run(TestSleepTask, %{}, continue_policies: [%TestAlwaysCancelPolicy{}])
+
+    Interpreter.distributed(program, %{workflow_id: "test_workflow_3"})
+
+    assert_eventually(fn ->
+      {:ok, events, _} = Store.fetch(Store.origin(), types: [Stc.Event.Failed])
+      Enum.any?(events, &match?(%{reason: {:cancelled, :test_cancel}}, &1))
+    end)
   end
 end

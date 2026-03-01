@@ -53,11 +53,10 @@ defmodule Stc.Free do
   Unfold a program from a seed, running one step at a time.
 
   `step_fn` is called with the seed (and subsequently with each step's result).
-  It returns either `{:cont, program}` to run `program` and continue, or `:halt`
+  It must return either `{:cont, program}` to run `program` and continue, or `:halt`
   to stop. The final result propagated outward is the last step's return value.
 
-  Unlike `cycle/2`, unfold terminates. Unlike building a static `parallel` or
-  `sequence`, each step is only emitted after the previous one completes — giving
+  Each step is only emitted after the previous one completes. Useful for example - giving
   natural single-file backpressure for paginated sources.
 
   ## Example

@@ -104,12 +104,16 @@ defmodule Stc.Interpreter.Distributed do
   end
 
   @spec emit_ready(map(), String.t()) :: :ok
-  defp emit_ready(%{task_id: task_id, module: module, payload: payload}, wf_id) do
+  defp emit_ready(
+         %{task_id: task_id, module: module, payload: payload, policies: policies},
+         wf_id
+       ) do
     event = %Stc.Event.Ready{
       workflow_id: wf_id,
       task_id: task_id,
       module: module,
       payload: payload,
+      policies: policies,
       timestamp: DateTime.utc_now()
     }
 
@@ -238,17 +242,17 @@ defmodule Stc.Interpreter.Distributed do
   defp extract_ready_tasks({:pure, _}, _workflow_id), do: []
 
   defp extract_ready_tasks(
-         {:free, %Op.Run{task_id: nil, module: mod, payload: p}, _cont_fn},
+         {:free, %Op.Run{task_id: nil, module: mod, payload: p, policies: policies}, _cont_fn},
          _workflow_id
        ) do
-    [%{task_id: Ecto.UUID.generate(), module: mod, payload: p}]
+    [%{task_id: Ecto.UUID.generate(), module: mod, payload: p, policies: policies}]
   end
 
   defp extract_ready_tasks(
-         {:free, %Op.Run{task_id: id, module: mod, payload: p}, _cont_fn},
+         {:free, %Op.Run{task_id: id, module: mod, payload: p, policies: policies}, _cont_fn},
          _workflow_id
        ) do
-    [%{task_id: id, module: mod, payload: p}]
+    [%{task_id: id, module: mod, payload: p, policies: policies}]
   end
 
   defp extract_ready_tasks(
