@@ -65,6 +65,18 @@ defmodule Stc.ReplyBuffer do
   end
 
   @doc """
+  Removes the executor registration and buffered messages for `task_id`.
+
+  Called by `Stc.Scheduler.Executor` on termination to release all state held
+  for this task. Safe to call for tasks that were never registered.
+  """
+  @spec unregister_executor(pid(), String.t()) :: :ok
+  def unregister_executor(reply_buffer_pid, task_id)
+      when is_pid(reply_buffer_pid) and is_binary(task_id) do
+    GenServer.call(reply_buffer_pid, {:unregister_executor, task_id})
+  end
+
+  @doc """
   Adds a message from `agent_id` for `task_id`.
 
   The message is buffered and, if an executor has registered for this `task_id`,
@@ -103,6 +115,20 @@ defmodule Stc.ReplyBuffer do
         %State{executors: executors} = state
       ) do
     {:reply, :ok, %State{state | executors: Map.put(executors, task_id, executor_pid)}}
+  end
+
+  @impl true
+  def handle_call(
+        {:unregister_executor, task_id},
+        _from,
+        %State{executors: executors, buffer: buffer} = state
+      ) do
+    {:reply, :ok,
+     %State{
+       state
+       | executors: Map.delete(executors, task_id),
+         buffer: Map.delete(buffer, task_id)
+     }}
   end
 
   @impl true

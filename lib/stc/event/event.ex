@@ -3,6 +3,18 @@ defmodule Stc.Event do
 
   defmodule Ready do
     @moduledoc false
+
+    @type t :: %__MODULE__{
+            workflow_id: String.t() | nil,
+            task_id: String.t() | nil,
+            module: module() | nil,
+            payload: map() | nil,
+            space_affinity: term(),
+            timestamp: DateTime.t() | nil,
+            scheduled?: boolean() | nil,
+            policies: Stc.Task.Policy.t() | nil
+          }
+
     defstruct [
       :workflow_id,
       :task_id,
@@ -10,12 +22,22 @@ defmodule Stc.Event do
       :payload,
       :space_affinity,
       :timestamp,
-      :scheduled?
+      :scheduled?,
+      policies: nil
     ]
   end
 
   defmodule Started do
     @moduledoc false
+
+    @type t :: %__MODULE__{
+            workflow_id: String.t() | nil,
+            task_id: String.t() | nil,
+            agent_ids: [String.t()] | nil,
+            async_handle: term(),
+            timestamp: DateTime.t() | nil
+          }
+
     defstruct [:workflow_id, :task_id, :agent_ids, :async_handle, :timestamp]
   end
 
@@ -38,6 +60,18 @@ defmodule Stc.Event do
 
   defmodule Pending do
     @moduledoc false
+
+    @type t :: %__MODULE__{
+            workflow_id: String.t() | nil,
+            task_id: String.t() | nil,
+            module: module() | nil,
+            payload: map() | nil,
+            conditions: term(),
+            last_schedule_attempt: DateTime.t() | nil,
+            schedule_attempts: non_neg_integer() | nil,
+            timestamp: DateTime.t() | nil
+          }
+
     defstruct [
       :workflow_id,
       :task_id,
@@ -52,16 +86,43 @@ defmodule Stc.Event do
 
   defmodule Preempted do
     @moduledoc false
+
+    @type t :: %__MODULE__{
+            workflow_id: String.t() | nil,
+            task_id: String.t() | nil,
+            preempted_by: term(),
+            reason: term(),
+            timestamp: DateTime.t() | nil
+          }
+
     defstruct [:workflow_id, :task_id, :preempted_by, :reason, :timestamp]
   end
 
   defmodule Failed do
     @moduledoc false
+
+    @type t :: %__MODULE__{
+            workflow_id: String.t() | nil,
+            task_id: String.t() | nil,
+            agent_ids: [String.t()] | nil,
+            reason: term(),
+            retriable: boolean() | nil,
+            attempt: pos_integer() | nil,
+            timestamp: DateTime.t() | nil
+          }
+
     defstruct [:workflow_id, :task_id, :agent_ids, :reason, :retriable, :attempt, :timestamp]
   end
 
   defmodule Progress do
     @moduledoc false
+
+    @type t :: %__MODULE__{
+            task_id: String.t() | nil,
+            progress: term(),
+            timestamp: DateTime.t() | nil
+          }
+
     defstruct [:task_id, :progress, :timestamp]
   end
 end

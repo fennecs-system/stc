@@ -30,9 +30,12 @@ defmodule Stc.Scheduler do
   alias Stc.ReplyBuffer
   alias Stc.Scheduler.Executor
   alias Stc.Scheduler.State
+  alias Stc.Task.Context
   alias Stc.Task.Spec
 
   require Logger
+
+  @default_scheduler_tick_rate_ms :timer.seconds(1)
 
   @doc false
   def via(id) do
@@ -91,7 +94,9 @@ defmodule Stc.Scheduler do
       event_loop_ref: nil,
       event_cursor: Store.origin(),
       pending_ready: [],
-      reply_buffer: reply_buffer_pid
+      reply_buffer: reply_buffer_pid,
+      scheduler_tick_rate_ms:
+        Keyword.get(opts, :scheduler_tick_rate_ms, @default_scheduler_tick_rate_ms)
     }
 
     {:ok, schedule_event_loop(state)}
@@ -130,7 +135,7 @@ defmodule Stc.Scheduler do
 
   @spec schedule_event_loop(State.t()) :: State.t()
   def schedule_event_loop(%State{event_loop_ref: nil} = state) do
-    ref = Process.send_after(self(), :event_loop, :timer.seconds(1))
+    ref = Process.send_after(self(), :event_loop, state.scheduler_tick_rate_ms)
     %State{state | event_loop_ref: ref}
   end
 
@@ -138,7 +143,7 @@ defmodule Stc.Scheduler do
     # Cancel only if the timer is still alive; ignore the return value — it may have
     # already fired by the time we get here.
     Process.cancel_timer(ref)
-    new_ref = Process.send_after(self(), :event_loop, :timer.seconds(1))
+    new_ref = Process.send_after(self(), :event_loop, state.scheduler_tick_rate_ms)
     %State{state | event_loop_ref: new_ref}
   end
 
@@ -176,6 +181,7 @@ defmodule Stc.Scheduler do
     case try_schedule_ready(event, state) do
       {:ok, new_state} -> new_state
       {:error, :no_capacity, new_state} -> buffer_pending(new_state, event)
+      {:error, :rejected, new_state} -> buffer_pending(new_state, event)
       {:error, _other, new_state} -> new_state
     end
   end
@@ -189,18 +195,52 @@ defmodule Stc.Scheduler do
   defp dispatch_event(_unknown, %State{} = state), do: state
 
   @spec try_schedule_ready(Stc.Event.Ready.t(), State.t()) ::
-          {:ok, State.t()} | {:error, :no_capacity | :locked | atom(), State.t()}
+          {:ok, State.t()}
+          | {:error, :no_capacity | :locked | :rejected | :failed_to_spawn, State.t()}
   defp try_schedule_ready(%Stc.Event.Ready{} = event, %State{} = state) do
     with {:ok, locked_state} <- try_acquire_lock(event.task_id, state),
          {:ok, agents} <- select_agents_for_event(event, locked_state),
+         :ok <- check_admit_policies(event, agents, locked_state),
          {:ok, final_state} <- spawn_executor(event, agents, locked_state) do
       {:ok, final_state}
     else
       {:error, :locked} -> {:error, :locked, state}
       {:error, :no_capacity} -> {:error, :no_capacity, state}
+      {:error, :rejected} -> {:error, :rejected, state}
       {:error, :failed_to_spawn} -> {:error, :failed_to_spawn, state}
-      {:error, reason} -> {:error, reason, state}
     end
+  end
+
+  @spec check_admit_policies(Stc.Event.Ready.t(), [Stc.Agent.t()], State.t()) ::
+          :ok | {:error, :rejected}
+  defp check_admit_policies(%Stc.Event.Ready{policies: nil}, _agents, _state), do: :ok
+  defp check_admit_policies(%Stc.Event.Ready{policies: %{admit: []}}, _agents, _state), do: :ok
+
+  defp check_admit_policies(%Stc.Event.Ready{policies: %{admit: policies}} = event, agents, state) do
+    context = %Context{
+      workflow_id: event.workflow_id,
+      task_id: event.task_id,
+      agents: agents,
+      task_spec: Spec.new(event.module, event.payload, policies: event.policies),
+      attempt: 1,
+      cluster_id: nil,
+      space_id: nil,
+      reply_buffer: state.reply_buffer
+    }
+
+    Enum.reduce_while(policies, :ok, fn policy, _ ->
+      case policy.__struct__.admit(policy, context) do
+        :ok ->
+          {:cont, :ok}
+
+        {:reject, reason} ->
+          Logger.warning(
+            "Task #{event.task_id} rejected by #{inspect(policy.__struct__)}: #{inspect(reason)}"
+          )
+
+          {:halt, {:error, :rejected}}
+      end
+    end)
   end
 
   @spec buffer_pending(State.t(), Stc.Event.Ready.t()) :: State.t()
@@ -250,7 +290,7 @@ defmodule Stc.Scheduler do
     config = %{
       workflow_id: event.workflow_id,
       task_id: event.task_id,
-      task_spec: Spec.new(event.module, event.payload),
+      task_spec: Spec.new(event.module, event.payload, policies: event.policies),
       agents: agents,
       agent_ids: Enum.map(agents, & &1.id),
       scheduler_id: state.id,

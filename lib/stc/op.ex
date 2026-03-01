@@ -5,7 +5,15 @@ defmodule Stc.Op do
 
   defmodule Run do
     @moduledoc false
-    defstruct [:task_id, :module, :payload, :cluster_affinity, :space_affinity, :agent_affinity]
+    defstruct [
+      :task_id,
+      :module,
+      :payload,
+      :cluster_affinity,
+      :space_affinity,
+      :agent_affinity,
+      policies: %Stc.Task.Policy{}
+    ]
   end
 
   # for reversing a Run op

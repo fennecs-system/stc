@@ -2,12 +2,13 @@ defmodule Stc.Task.Spec do
   @moduledoc """
   Generic specification for a task
   """
-  alias Stc.Task.RetryPolicy
+
+  alias Stc.Task.Policy
 
   defstruct [
     :module,
     :payload,
-    :retry_policy,
+    :policies,
     :timeout_ms,
     :startup_timeout_ms
   ]
@@ -15,21 +16,21 @@ defmodule Stc.Task.Spec do
   @type t :: %__MODULE__{
           module: module(),
           payload: map(),
-          retry_policy: RetryPolicy.t(),
+          policies: Policy.t(),
           startup_timeout_ms: pos_integer() | nil,
           timeout_ms: pos_integer() | nil
         }
 
   @spec new(module(), map(), keyword()) :: t()
   def new(module, payload, opts \\ []) do
-    retry_policy = Keyword.get(opts, :retry_policy, %RetryPolicy{})
+    policies = Keyword.get(opts, :policies, %Policy{})
     timeout_ms = Keyword.get(opts, :timeout_ms, :timer.hours(1))
     startup_timeout_ms = Keyword.get(opts, :startup_timeout_ms, :timer.hours(1))
 
     %__MODULE__{
       module: module,
       payload: payload,
-      retry_policy: retry_policy,
+      policies: policies,
       timeout_ms: timeout_ms,
       startup_timeout_ms: startup_timeout_ms
     }

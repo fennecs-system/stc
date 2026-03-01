@@ -58,10 +58,6 @@ defmodule Stc.Backend.Memory.KV do
     GenServer.call(__MODULE__, :list_keys)
   end
 
-  # ---------------------------------------------------------------------------
-  # GenServer callbacks
-  # ---------------------------------------------------------------------------
-
   @impl true
   def init(%State{} = state) do
     {:ok, state}

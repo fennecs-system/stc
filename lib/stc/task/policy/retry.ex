@@ -1,4 +1,4 @@
-defmodule Stc.Task.RetryPolicy do
+defmodule Stc.Task.Policy.Retry do
   @moduledoc """
   Executes a task
   """
