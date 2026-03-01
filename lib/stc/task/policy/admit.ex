@@ -6,14 +6,16 @@ defmodule Stc.Task.Policy.Admit do
   They flow through `Op.Run` and `Event.Ready` to the scheduler, which evaluates them in
   order before spawning an executor.
 
-  Admit policies must return :ok, or {:reject, reason}
+  Admit policies must return `:ok`, `{:pending, conditions}`, or `{:reject, reason}`.
 
-  If a policy returns `{:reject, reason}`, the task is buffered as a `pending` task and
-  retried on the next scheduler tick. This is equivalent to when agents have no capacity.
-
-  This means a rejected task will be retried automatically, so policies that reserve a shared
-  resource (e.g. budget) will naturally unblock once other tasks complete and release their
-  reservations.
+  - `:ok` — task is admitted and an executor is spawned.
+  - `{:pending, conditions}` — transient resource constraint (e.g. budget quota exhausted,
+    no capacity on a downstream system). The scheduler emits an `Event.Pending` with the
+    given `conditions` and retries on the next tick. Use this for states that resolve
+    naturally as other tasks complete.
+  - `{:reject, reason}` — permanent denial. Currently also emits `Event.Pending` (with
+    `conditions: {:rejected, reason}`) and retries, so the task remains unschedulable until
+    the policy changes. A future `Event.Rejected` terminal event will be emitted instead.
 
   ## Example
 
@@ -25,7 +27,7 @@ defmodule Stc.Task.Policy.Admit do
         def admit(%__MODULE__{max_spend: max}, context) do
           case BudgetService.try_reserve(context.workflow_id, max) do
             :ok -> :ok
-            {:error, :insufficient} -> {:reject, :insufficient_budget}
+            {:error, :insufficient} -> {:pending, :insufficient_budget}
           end
         end
       end
@@ -42,8 +44,9 @@ defmodule Stc.Task.Policy.Admit do
   @doc """
   Called by the scheduler before dispatching a task.
 
-  Return `:ok` to allow execution, or `{:reject, reason}` to defer.
+  Return `:ok` to allow execution, `{:pending, conditions}` to defer due to a transient
+  resource constraint, or `{:reject, reason}` for a permanent denial.
   """
   @callback admit(policy :: struct(), context :: Context.t()) ::
-              :ok | {:reject, reason :: term()}
+              :ok | {:pending, conditions :: term()} | {:reject, reason :: term()}
 end

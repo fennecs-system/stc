@@ -5,50 +5,91 @@ defmodule Stc.Scheduler.State do
   ## Event consumption model
 
   The scheduler maintains a `event_cursor` — an opaque position in the `EventLog` —
-  and advances it each tick by calling `Stc.Event.Store.fetch/2`. Events that could
-  not be acted on immediately (e.g. `Ready` events with no available agents) are kept
-  in `pending_ready` and retried on the next tick. All other event types are consumed
-  once and discarded from in-memory state.
+  and advances it each tick by calling `Stc.Event.Store.fetch/2`. When a `Ready` event
+  cannot be scheduled (no capacity, admit policy deferral), the scheduler emits an
+  `Event.Pending` back into the log with the blocking conditions. On the next tick the
+  scheduler re-reads the `Pending` event and re-attempts scheduling. This ensures
+  unscheduled tasks survive restarts and are visible in the event log.
+
+  ## Affinity routing
+
+  Three fields narrow which `Ready` events this scheduler will handle:
+
+  - `tags` — matched against `Event.Ready.scheduler_affinity`. A task with no
+    `scheduler_affinity` (nil) is accepted by any scheduler. A task *with* tags is
+    only accepted by a scheduler that shares at least one tag. An **untagged scheduler**
+    (`tags: []`) will **not** pick up tagged tasks — it only handles untagged ones.
+  - `space_id` — matched exactly against `Event.Ready.space_affinity`. nil on the task
+    means "any space"; nil on the scheduler means "space unknown, reject space-pinned tasks".
+  - `cluster_id` — same exact-match semantics as `space_id`.
+
+  All three must match for the scheduler to act on an event. Existing schedulers and
+  tasks that leave all affinity fields nil continue to match each other unchanged.
   """
 
   @type t :: %__MODULE__{
           id: String.t(),
           # :local | :space | :cluster
           level: atom(),
-          agent_pool: [Stc.Agent.t()],
-          # Agents temporarily inactive (e.g. brief timeout, heartbeat missed).
-          stale_agent_pool: [Stc.Agent.t()],
+          # All known agents grouped by status atom, e.g. %{active: [...], unhealthy: [...]}.
+          # The :active bucket is the scheduling-eligible set; other buckets are available
+          # to reconcile_stale_agents for backend-specific remediation.
+          agent_pool: %{atom() => [Stc.Agent.t()]},
           algorithm: module(),
           # agent_id => [task_id]
           agent_tasks: %{String.t() => [String.t()]},
+          # task_id => [agent_id]; reverse of agent_tasks for targeted cleanup without a full map rebuild
+          task_agents: %{String.t() => [String.t()]},
           # task_id => lock term acquired via Event.Store.try_lock/3
           task_locks: %{String.t() => term()},
           # task_id => executor pid
-          active_tasks: %{String.t() => pid()},
+          task_to_executor_pid: %{String.t() => pid()},
+          # executor pid => task_id; reverse of task_to_executor_pid for O(1) :DOWN lookup
+          executor_pid_to_task: %{pid() => String.t()},
           event_loop_ref: reference() | nil,
           # Cursor into the EventLog; advances forward-only each tick.
           event_cursor: Stc.Backend.EventLog.cursor(),
-          # Ready events that couldn't be scheduled (no capacity); retried each tick.
-          pending_ready: [Stc.Event.Ready.t()],
           # pid of this scheduler's ReplyBuffer
-          reply_buffer: pid(),
+          reply_buffer: pid() | nil,
           # time in ms of tick rate - defaults to 1 sec
-          scheduler_tick_rate_ms: integer()
+          scheduler_tick_rate_ms: integer(),
+          # Affinity dimensions for routing Ready/Pending events to this scheduler.
+          tags: [atom()],
+          space_id: String.t() | nil,
+          cluster_id: String.t() | nil,
+          # workflow_id => MapSet of task_ids currently active; populated on spawn, pruned on completion.
+          workflow_tasks: %{String.t() => MapSet.t(String.t())},
+          # task_ids for which Stop has been seen; guards Ready/Pending dispatch.
+          stopped_task_ids: MapSet.t(),
+          # agent_id => {timer_ref, Agent.t()}; tracks health-toleration timers.
+          agent_health_timers: %{String.t() => {reference(), Stc.Agent.t()}},
+          # task_id => Event.Ready.t(); snapshot stored at spawn for re-emission on preemption.
+          active_task_info: %{String.t() => Stc.Event.Ready.t()},
+          # task_ids for which the scheduler initiated preemption; Preempted event triggers re-emit Ready.
+          preempting_task_ids: MapSet.t()
         }
 
   defstruct [
     :id,
     :level,
     :agent_pool,
-    :stale_agent_pool,
     :algorithm,
     :agent_tasks,
+    :task_agents,
     :task_locks,
-    :active_tasks,
+    :task_to_executor_pid,
+    :executor_pid_to_task,
     :event_loop_ref,
     :event_cursor,
     :reply_buffer,
     :scheduler_tick_rate_ms,
-    pending_ready: []
+    :space_id,
+    :cluster_id,
+    tags: [],
+    workflow_tasks: %{},
+    stopped_task_ids: MapSet.new(),
+    agent_health_timers: %{},
+    active_task_info: %{},
+    preempting_task_ids: MapSet.new()
   ]
 end

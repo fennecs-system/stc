@@ -11,28 +11,48 @@ defmodule Stc.Op do
       :payload,
       :cluster_affinity,
       :space_affinity,
+      :scheduler_affinity,
       :agent_affinity,
+      :duration_ms,
+      store: false,
       policies: %Stc.Task.Policy{}
     ]
   end
 
+  # planned -
   # for reversing a Run op
+  # however tasks now have a Clean step so this might just be equivalent to a Run
+  # perhaps we could emit a Clean event instead
   defmodule Clean do
     @moduledoc false
     defstruct [:task_id, :module, :payload, :cluster_affinity, :space_affinity, :agent_affinity]
   end
 
+  # probably need some semantics for moving a job between spaces
+  # eg its currently tunning on one space affinity - needs to be
+  # moved to a different space
+  # somehow does something to an entire workflow tho
+  # changes affinitiess
+  # need to gracefully move
+  defmodule Move do
+    @moduledoc false
+    defstruct [:task_id]
+  end
+
+  # planned -
   # for scheduling purposes
   defmodule Pause do
     @moduledoc false
     defstruct [:task_id]
   end
 
+  # planned
   defmodule Resume do
     @moduledoc false
     defstruct [:task_id]
   end
 
+  # planned
   defmodule Terminate do
     @moduledoc false
     defstruct [:task_id]
@@ -48,16 +68,21 @@ defmodule Stc.Op do
     defstruct [:programs]
   end
 
+  # planned
   defmodule Wait do
     @moduledoc false
     defstruct [:task_id, :continuation]
   end
 
+  # planned
   defmodule OnFailure do
     @moduledoc false
     defstruct [:task_id, :handler, :continuation]
   end
 
+  # planned
+  # hook to be able to emit generic events - for other stuff to happen
+  # kind of dynamic
   defmodule EmitEvent do
     @moduledoc false
     defstruct [:event, :continuation]

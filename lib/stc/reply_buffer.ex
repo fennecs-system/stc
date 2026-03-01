@@ -112,9 +112,16 @@ defmodule Stc.ReplyBuffer do
   def handle_call(
         {:register_executor, task_id, executor_pid},
         _from,
-        %State{executors: executors} = state
+        %State{executors: executors, buffer: buffer} = state
       ) do
-    {:reply, :ok, %State{state | executors: Map.put(executors, task_id, executor_pid)}}
+    # Drop any messages buffered from a previous attempt so a retried executor
+    # does not receive stale replies.
+    {:reply, :ok,
+     %State{
+       state
+       | executors: Map.put(executors, task_id, executor_pid),
+         buffer: Map.delete(buffer, task_id)
+     }}
   end
 
   @impl true

@@ -1,20 +1,20 @@
 ## todos
 
-- cancel / stop - stop a task mid execution
+- [done] cancel / stop - stop a task mid execution
   - executor receives `:cancel`, calls `Task.clean/3`, emits `Cancelled` event
   - scheduler needs `workflow_tasks: %{workflow_id => [task_id]}` to find active tasks by workflow
 
-- can continue, retry, admit policies [done]
+- [done] can continue, retry, admit policies 
 
-- move task execution - eg a node dies in this space - lets move it, or gets requested to move
+- move semantics - move task execution - eg a node dies in this space - lets move it, or gets requested to move
   - `reconcile_stale_agents` detects dead agents; moving = cancel executor for their tasks,
     re-emit `Ready` events; `resume/3` handles reconnecting to in-flight work
 
-- run a task for x time (duration_ms on Spec, distinct from timeout_ms which means failure)
+- [done] run a task for x time (duration_ms on Spec, distinct from timeout_ms which means failure)
   - executor fires `:duration_elapsed` after duration_ms → sends stop signal to agent
   - agent stops gracefully and replies `{:result, result}`
 
-- store tasks - like a nix store but for tasks; opt-in via `store: true` on `Op.Run`
+- [done] store tasks - like a nix store but for tasks; opt-in via `store: true` on `Op.Run`
   - task_id is derived as hash of `{module, payload}` — content-addressed identity
   - before emitting `Ready`, distributed walker checks for a store entry:
       `"stc:store:{task_id}"` → `{canonical_task_id, result}`

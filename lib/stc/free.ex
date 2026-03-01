@@ -1,6 +1,6 @@
 defmodule Stc.Free do
   @moduledoc """
-  A free monad
+  A free monad over ops
   """
 
   @doc false

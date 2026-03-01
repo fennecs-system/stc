@@ -1,45 +1,3 @@
-defmodule Stc.Scheduler.Executor.State do
-  @moduledoc false
-
-  @type t :: %__MODULE__{
-          workflow_id: String.t(),
-          task_id: String.t(),
-          task_spec: Stc.Task.Spec.t(),
-          agents: [Stc.Agent.t()],
-          agent_ids: [String.t()],
-          scheduler_id: String.t(),
-          reply_buffer: pid(),
-          attempt: pos_integer(),
-          cluster_id: String.t() | nil,
-          space_id: String.t() | nil,
-          startup_timeout_ref: reference() | nil,
-          task_timeout_ref: reference() | nil,
-          continue_check_refs: [reference()],
-          # Handle returned by the task module for async tasks; used by liveness checks.
-          async_handle: term(),
-          # Monotonic millisecond timestamps of recent liveness-check failures.
-          liveness_check_failures: [integer()]
-        }
-
-  defstruct [
-    :workflow_id,
-    :task_id,
-    :task_spec,
-    :agents,
-    :agent_ids,
-    :scheduler_id,
-    :reply_buffer,
-    :attempt,
-    :cluster_id,
-    :space_id,
-    async_handle: nil,
-    startup_timeout_ref: nil,
-    task_timeout_ref: nil,
-    continue_check_refs: [],
-    liveness_check_failures: []
-  ]
-end
-
 defmodule Stc.Scheduler.Executor do
   @moduledoc """
   Executes a single task instance.
@@ -86,6 +44,7 @@ defmodule Stc.Scheduler.Executor do
   alias Stc.Task.Policy.Retry
   alias Stc.Task.Result
   alias Stc.Task.Spec
+  alias Stc.Task.Store, as: TaskStore
 
   require Logger
 
@@ -120,28 +79,41 @@ defmodule Stc.Scheduler.Executor do
   @spec spawn_resume(State.t(), term(), Context.t()) ::
           {:noreply, State.t()} | {:stop, :normal, State.t()}
   defp spawn_resume(%State{} = state, handle, context) do
-    if Task.resumable?(state.task_spec.module) do
-      case state.task_spec.module.resume(state.task_spec, handle, context) do
-        {:ok, task_result} ->
-          emit_completion(state, task_result)
-          {:stop, :normal, state}
-
-        {:started, new_handle} ->
-          state = %State{state | async_handle: new_handle}
-          state = maybe_spawn_timeouts(state)
-          state = spawn_liveness_checks(state)
-          ReplyBuffer.register_executor(state.reply_buffer, state.task_id, self())
-          emit_started(state, new_handle)
-          {:noreply, state}
-
-        {:error, reason} ->
-          handle_failure(state, reason, context)
-      end
+    with true <- Task.resumable?(state.task_spec.module),
+         {:ok, task_result} <- state.task_spec.module.resume(state.task_spec, handle, context) do
+      emit_completion(state, task_result)
+      {:stop, :normal, state}
     else
-      # No resume: clean up previous attempt then start fresh.
-      Task.clean(state.task_spec.module, state.task_spec, context)
-      spawn_start(state, context)
+      false ->
+        # No resume: clean up previous attempt then start fresh.
+        Task.clean(state.task_spec.module, state.task_spec, context)
+        spawn_start(state, context)
+
+      {:started, new_handle} ->
+        state = %State{state | async_handle: new_handle}
+        state = maybe_spawn_timeouts(state)
+        state = spawn_liveness_checks(state)
+        ReplyBuffer.register_executor(state.reply_buffer, state.task_id, self())
+        emit_started(state, new_handle)
+        {:noreply, state}
+
+      {:error, reason} ->
+        handle_failure(state, reason, context)
     end
+  rescue
+    err ->
+      Logger.error(
+        "Task #{state.task_id} raised in resume/3:\n#{Exception.format(:error, err, __STACKTRACE__)}"
+      )
+
+      handle_failure(state, {:exception, err}, context)
+  catch
+    kind, payload ->
+      Logger.error(
+        "Task #{state.task_id} threw in resume/3:\n#{Exception.format(kind, payload, __STACKTRACE__)}"
+      )
+
+      handle_failure(state, {:thrown, {kind, payload}}, context)
   end
 
   @spec spawn_start(State.t(), Context.t()) ::
@@ -163,6 +135,20 @@ defmodule Stc.Scheduler.Executor do
       {:error, reason} ->
         handle_failure(state, reason, context)
     end
+  rescue
+    err ->
+      Logger.error(
+        "Task #{state.task_id} raised in start/2:\n#{Exception.format(:error, err, __STACKTRACE__)}"
+      )
+
+      handle_failure(state, {:exception, err}, context)
+  catch
+    kind, payload ->
+      Logger.error(
+        "Task #{state.task_id} threw in start/2:\n#{Exception.format(kind, payload, __STACKTRACE__)}"
+      )
+
+      handle_failure(state, {:thrown, {kind, payload}}, context)
   end
 
   @spec spawn_liveness_checks(State.t()) :: State.t()
@@ -183,18 +169,14 @@ defmodule Stc.Scheduler.Executor do
     opts = [task_id: task_id, workflow_id: workflow_id]
 
     # Check for completion first (limit: 1 — we only need to know if any exists).
-    {:ok, completed, _} =
-      Store.fetch(Store.origin(), [{:types, [Stc.Event.Completed]}, {:limit, 1} | opts])
-
-    if completed != [] do
-      :not_found
+    with {:ok, [], _} <-
+           Store.fetch(Store.origin(), [{:types, [Stc.Event.Completed]}, {:limit, 1} | opts]),
+         {:ok, started, _} <- Store.fetch(Store.origin(), [{:types, [Stc.Event.Started]} | opts]),
+         %Stc.Event.Started{async_handle: handle} <- List.last(started) do
+      {:ok, handle}
     else
-      {:ok, started, _} = Store.fetch(Store.origin(), [{:types, [Stc.Event.Started]} | opts])
-
-      case List.last(started) do
-        nil -> :not_found
-        %Stc.Event.Started{async_handle: handle} -> {:ok, handle}
-      end
+      {:ok, [_ | _], _} -> :not_found
+      nil -> :not_found
     end
   end
 
@@ -262,6 +244,24 @@ defmodule Stc.Scheduler.Executor do
         emit_failure(state, {:cancelled, reason}, false)
         {:stop, :normal, state}
     end
+  rescue
+    err ->
+      Logger.error(
+        "Task #{state.task_id} raised in continue check:\n#{Exception.format(:error, err, __STACKTRACE__)}"
+      )
+
+      state = cancel_continue_checks(state)
+      emit_failure(state, {:exception, err}, false)
+      {:stop, :normal, state}
+  catch
+    kind, payload ->
+      Logger.error(
+        "Task #{state.task_id} threw in continue check:\n#{Exception.format(kind, payload, __STACKTRACE__)}"
+      )
+
+      state = cancel_continue_checks(state)
+      emit_failure(state, {:thrown, {kind, payload}}, false)
+      {:stop, :normal, state}
   end
 
   @impl true
@@ -295,14 +295,73 @@ defmodule Stc.Scheduler.Executor do
       Process.send_after(self(), :liveness_check, interval)
       {:noreply, state}
     end
+  rescue
+    err ->
+      Logger.error(
+        "Task #{state.task_id} raised in liveness check:\n#{Exception.format(:error, err, __STACKTRACE__)}"
+      )
+
+      emit_failure(state, :liveness_check_failed, true)
+      {:stop, :normal, state}
+  catch
+    kind, payload ->
+      Logger.error(
+        "Task #{state.task_id} threw in liveness check:\n#{Exception.format(kind, payload, __STACKTRACE__)}"
+      )
+
+      emit_failure(state, :liveness_check_failed, true)
+      {:stop, :normal, state}
   end
 
   @impl true
-  def handle_info(:cancel, %State{} = state) do
-    state = cancel_continue_checks(state)
+  def handle_info(:duration_elapsed, %State{} = state) do
     context = to_context(state)
-    Task.clean(state.task_spec.module, state.task_spec, context)
-    emit_failure(state, :cancelled, false)
+    state = cancel_timers(state)
+
+    try do
+      Task.clean(state.task_spec.module, state.task_spec, context)
+    rescue
+      err ->
+        Logger.error(
+          "Task #{state.task_id} raised in clean/2 during duration_elapsed:\n#{Exception.format(:error, err, __STACKTRACE__)}"
+        )
+    catch
+      kind, payload ->
+        Logger.error(
+          "Task #{state.task_id} threw in clean/2 during duration_elapsed:\n#{Exception.format(kind, payload, __STACKTRACE__)}"
+        )
+    end
+
+    emit_failure(state, :duration_elapsed, false)
+    {:stop, :normal, state}
+  end
+
+  @impl true
+  def handle_info(:cancel, %State{} = state), do: do_cancel(state, :cancelled)
+
+  @impl true
+  def handle_info({:cancel, reason}, %State{} = state), do: do_cancel(state, reason)
+
+  @impl true
+  def handle_info({:preempt, reason}, %State{} = state) do
+    state = cancel_timers(state)
+    context = to_context(state)
+
+    try do
+      Task.clean(state.task_spec.module, state.task_spec, context)
+    rescue
+      err ->
+        Logger.error(
+          "Task #{state.task_id} raised in clean/2 during preemption:\n#{Exception.format(:error, err, __STACKTRACE__)}"
+        )
+    catch
+      kind, payload ->
+        Logger.error(
+          "Task #{state.task_id} threw in clean/2 during preemption:\n#{Exception.format(kind, payload, __STACKTRACE__)}"
+        )
+    end
+
+    emit_preempted(state, reason)
     {:stop, :normal, state}
   end
 
@@ -310,9 +369,7 @@ defmodule Stc.Scheduler.Executor do
   def handle_info(_msg, %State{} = state), do: {:noreply, state}
 
   @impl true
-  def terminate(_reason, %State{reply_buffer: rb, task_id: task_id}) do
-    ReplyBuffer.unregister_executor(rb, task_id)
-  end
+  def terminate(_reason, %State{}), do: :ok
 
   @spec to_context(State.t()) :: Context.t()
   defp to_context(%State{} = state) do
@@ -329,41 +386,37 @@ defmodule Stc.Scheduler.Executor do
   end
 
   @spec maybe_spawn_timeouts(State.t()) :: State.t()
-  defp maybe_spawn_timeouts(
-         %State{task_spec: %Spec{startup_timeout_ms: startup_ms, timeout_ms: task_ms} = spec} =
-           state
-       ) do
-    startup_ref =
-      case startup_ms do
-        ms when is_integer(ms) and ms > 0 -> Process.send_after(self(), :startup_timeout, ms)
-        nil -> nil
-      end
-
-    task_ref =
-      case task_ms do
-        ms when is_integer(ms) and ms > 0 -> Process.send_after(self(), :task_timeout, ms)
-        nil -> nil
-      end
-
-    continue_refs =
-      case spec.policies do
-        %{continue: [_ | _] = policies} ->
-          Enum.map(policies, fn policy ->
-            interval = Policy.Continue.check_interval_ms(policy)
-            Process.send_after(self(), {:continue_check, policy}, interval)
-          end)
-
-        _ ->
-          []
-      end
+  defp maybe_spawn_timeouts(%State{task_spec: spec} = state) do
+    startup_ref = schedule_optional_timer(:startup_timeout, spec.startup_timeout_ms)
+    task_ref = schedule_optional_timer(:task_timeout, spec.timeout_ms)
+    duration_ref = schedule_optional_timer(:duration_elapsed, spec.duration_ms)
+    continue_refs = schedule_continue_checks(spec)
 
     %State{
       state
       | startup_timeout_ref: startup_ref,
         task_timeout_ref: task_ref,
+        duration_timeout_ref: duration_ref,
         continue_check_refs: continue_refs
     }
   end
+
+  @spec schedule_optional_timer(term(), pos_integer() | nil) :: reference() | nil
+  defp schedule_optional_timer(msg, ms) when is_integer(ms) and ms > 0 do
+    Process.send_after(self(), msg, ms)
+  end
+
+  defp schedule_optional_timer(_msg, _), do: nil
+
+  @spec schedule_continue_checks(Spec.t()) :: [reference()]
+  defp schedule_continue_checks(%Spec{policies: %{continue: [_ | _] = policies}}) do
+    Enum.map(policies, fn policy ->
+      interval = Policy.Continue.check_interval_ms(policy)
+      Process.send_after(self(), {:continue_check, policy}, interval)
+    end)
+  end
+
+  defp schedule_continue_checks(_), do: []
 
   @spec cancel_startup_timeout(State.t()) :: State.t()
   defp cancel_startup_timeout(%State{startup_timeout_ref: nil} = state), do: state
@@ -383,6 +436,22 @@ defmodule Stc.Scheduler.Executor do
     %State{state | continue_check_refs: []}
   end
 
+  @spec cancel_timers(State.t()) :: State.t()
+  defp cancel_timers(%State{} = state) do
+    _ = if state.startup_timeout_ref, do: Process.cancel_timer(state.startup_timeout_ref)
+    _ = if state.task_timeout_ref, do: Process.cancel_timer(state.task_timeout_ref)
+    _ = if state.duration_timeout_ref, do: Process.cancel_timer(state.duration_timeout_ref)
+    Enum.each(state.continue_check_refs, &Process.cancel_timer/1)
+
+    %State{
+      state
+      | startup_timeout_ref: nil,
+        task_timeout_ref: nil,
+        duration_timeout_ref: nil,
+        continue_check_refs: []
+    }
+  end
+
   @spec handle_failure(State.t(), term(), map()) ::
           {:noreply, State.t()} | {:stop, :normal, State.t()}
   defp handle_failure(%State{} = state, reason, context) do
@@ -390,13 +459,25 @@ defmodule Stc.Scheduler.Executor do
       Stc.Task.retriable?(state.task_spec.module, reason) and
         state.attempt < state.task_spec.policies.retry.max_attempts
 
-    state.task_spec.module.clean(state.task_spec, context)
+    try do
+      state.task_spec.module.clean(state.task_spec, context)
+    rescue
+      err ->
+        Logger.error(
+          "Task #{state.task_id} raised in clean/2:\n#{Exception.format(:error, err, __STACKTRACE__)}"
+        )
+    catch
+      kind, payload ->
+        Logger.error(
+          "Task #{state.task_id} threw in clean/2:\n#{Exception.format(kind, payload, __STACKTRACE__)}"
+        )
+    end
 
     if retriable? do
       emit_failure(state, reason, true)
       backoff_ms = Retry.backoff_ms(state.task_spec.policies.retry, state.attempt)
-      Process.send_after(self(), :start, backoff_ms)
-      {:noreply, %State{state | attempt: state.attempt + 1}}
+      Process.sleep(backoff_ms)
+      {:noreply, %State{state | attempt: state.attempt + 1}, {:continue, :start}}
     else
       state = cancel_continue_checks(state)
       emit_failure(state, reason, false)
@@ -404,48 +485,97 @@ defmodule Stc.Scheduler.Executor do
     end
   end
 
+  @spec do_cancel(State.t(), term()) :: {:stop, :normal, State.t()}
+  defp do_cancel(%State{} = state, reason) do
+    state = cancel_continue_checks(state)
+    context = to_context(state)
+
+    try do
+      Task.clean(state.task_spec.module, state.task_spec, context)
+    rescue
+      err ->
+        Logger.error(
+          "Task #{state.task_id} raised in clean/2:\n#{Exception.format(:error, err, __STACKTRACE__)}"
+        )
+    catch
+      kind, payload ->
+        Logger.error(
+          "Task #{state.task_id} threw in clean/2:\n#{Exception.format(kind, payload, __STACKTRACE__)}"
+        )
+    end
+
+    emit_failure(state, reason, false)
+    {:stop, :normal, state}
+  end
+
+  @spec emit_preempted(State.t(), term()) :: :ok
+  defp emit_preempted(%State{} = state, reason) do
+    case Store.append(%Event.Preempted{
+           workflow_id: state.workflow_id,
+           task_id: state.task_id,
+           agent_ids: state.agent_ids,
+           reason: reason,
+           timestamp: DateTime.utc_now()
+         }) do
+      {:ok, _} -> :ok
+      {:error, err} -> exit({:emit_failed, err})
+    end
+  end
+
   @spec emit_started(State.t(), term()) :: :ok
   defp emit_started(%State{} = state, handle) do
-    {:ok, _cursor} =
-      Store.append(%Event.Started{
-        workflow_id: state.workflow_id,
-        task_id: state.task_id,
-        agent_ids: state.agent_ids,
-        async_handle: handle,
-        timestamp: DateTime.utc_now()
-      })
-
-    :ok
+    case Store.append(%Event.Started{
+           workflow_id: state.workflow_id,
+           task_id: state.task_id,
+           agent_ids: state.agent_ids,
+           async_handle: handle,
+           timestamp: DateTime.utc_now()
+         }) do
+      {:ok, _} -> :ok
+      {:error, err} -> exit({:emit_failed, err})
+    end
   end
 
   @spec emit_completion(State.t(), term()) :: :ok
-  defp emit_completion(%State{} = state, result) do
-    {:ok, _cursor} =
-      Store.append(%Event.Completed{
-        workflow_id: state.workflow_id,
-        task_id: state.task_id,
-        agent_ids: state.agent_ids,
-        result: result,
-        attempt: state.attempt,
-        timestamp: DateTime.utc_now()
-      })
+  defp emit_completion(%State{content_hash: hash} = state, result) when is_binary(hash) do
+    # Write to store before emitting Completed so the cache is warm when the
+    # walker emits the next task's Ready event.
+    TaskStore.put(hash, result)
+    do_emit_completion(state, result)
+  end
 
-    :ok
+  defp emit_completion(%State{} = state, result) do
+    do_emit_completion(state, result)
+  end
+
+  @spec do_emit_completion(State.t(), term()) :: :ok
+  defp do_emit_completion(%State{} = state, result) do
+    case Store.append(%Event.Completed{
+           workflow_id: state.workflow_id,
+           task_id: state.task_id,
+           agent_ids: state.agent_ids,
+           result: result,
+           attempt: state.attempt,
+           timestamp: DateTime.utc_now()
+         }) do
+      {:ok, _} -> :ok
+      {:error, err} -> exit({:emit_failed, err})
+    end
   end
 
   @spec emit_failure(State.t(), term(), boolean()) :: :ok
   defp emit_failure(%State{} = state, reason, retriable) do
-    {:ok, _cursor} =
-      Store.append(%Event.Failed{
-        workflow_id: state.workflow_id,
-        task_id: state.task_id,
-        agent_ids: state.agent_ids,
-        reason: reason,
-        retriable: retriable,
-        attempt: state.attempt,
-        timestamp: DateTime.utc_now()
-      })
-
-    :ok
+    case Store.append(%Event.Failed{
+           workflow_id: state.workflow_id,
+           task_id: state.task_id,
+           agent_ids: state.agent_ids,
+           reason: reason,
+           retriable: retriable,
+           attempt: state.attempt,
+           timestamp: DateTime.utc_now()
+         }) do
+      {:ok, _} -> :ok
+      {:error, err} -> exit({:emit_failed, err})
+    end
   end
 end

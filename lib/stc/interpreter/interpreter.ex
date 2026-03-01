@@ -9,6 +9,7 @@ defmodule Stc.Interpreter do
   alias Stc.Program.Store, as: ProgramStore
   alias Stc.Task.Result
   alias Stc.Task.Spec
+  alias Stc.Task.Store, as: TaskStore
 
   def local(program, context) do
     interpret_local(program, context)
@@ -140,8 +141,58 @@ defmodule Stc.Interpreter do
             task_id: id,
             module: mod,
             payload: payload,
-            space_affinity: affinity,
-            policies: policies
+            space_affinity: space_affinity,
+            cluster_affinity: cluster_affinity,
+            scheduler_affinity: scheduler_affinity,
+            policies: policies,
+            duration_ms: duration_ms,
+            store: true
+          }, _cont_fn},
+         context
+       ) do
+    hash = TaskStore.content_hash(mod, payload)
+
+    case TaskStore.get(hash) do
+      {:ok, cached_result} ->
+        Store.append(%Event.Completed{
+          workflow_id: context.workflow_id,
+          task_id: id,
+          result: cached_result,
+          timestamp: DateTime.utc_now()
+        })
+
+        {:ok, :cached}
+
+      {:error, :not_found} ->
+        Store.append(%Event.Ready{
+          workflow_id: context.workflow_id,
+          task_id: id,
+          module: mod,
+          payload: payload,
+          space_affinity: space_affinity,
+          cluster_affinity: cluster_affinity,
+          scheduler_affinity: scheduler_affinity,
+          policies: policies,
+          content_hash: hash,
+          duration_ms: duration_ms,
+          timestamp: DateTime.utc_now()
+        })
+
+        {:ok, :scheduled}
+    end
+  end
+
+  defp interpret_distributed(
+         {:free,
+          %Op.Run{
+            task_id: id,
+            module: mod,
+            payload: payload,
+            space_affinity: space_affinity,
+            cluster_affinity: cluster_affinity,
+            scheduler_affinity: scheduler_affinity,
+            policies: policies,
+            duration_ms: duration_ms
           }, _cont_fn},
          context
        ) do
@@ -151,8 +202,11 @@ defmodule Stc.Interpreter do
       task_id: id,
       module: mod,
       payload: payload,
-      space_affinity: affinity,
+      space_affinity: space_affinity,
+      cluster_affinity: cluster_affinity,
+      scheduler_affinity: scheduler_affinity,
       policies: policies,
+      duration_ms: duration_ms,
       timestamp: DateTime.utc_now()
     }
 

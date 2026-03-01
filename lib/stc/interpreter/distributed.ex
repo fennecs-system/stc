@@ -1,37 +1,29 @@
-defmodule Stc.Interpreter.Distributed.State do
-  @moduledoc false
-
-  @type t :: %__MODULE__{
-          cursor: Stc.Backend.EventLog.cursor()
-        }
-
-  defstruct [:cursor]
-end
-
 defmodule Stc.Interpreter.Distributed do
   @moduledoc """
   A GenServer that walks free-monad continuations as tasks complete.
 
   ## Event consumption
 
-  Rather than subscribing to the event store (which would couple this module to
+  Instead of subscribing to the event store (which would couple this module to
   backend push semantics), the walker maintains its own `cursor` and polls for
-  `Completed` events each tick. This makes it backend-agnostic and deterministic.
+  `Completed` events each tick. This is to try and make the walker deterministic.
 
   ## Cursor checkpointing
 
   The cursor is persisted to the KV backend after each poll that advances it.
+
   On restart the walker resumes from the saved position rather than replaying
   from the beginning of the log. The checkpoint stores `{cursor, hash}` where
-  `hash = :erlang.phash2(cursor)` — a lightweight sanity check that catches
-  truncated writes or accidental key reuse. If the hash fails the walker falls
-  back to `origin/0` and replays in full (safe because `handle_completed/1` is
+  `hash = :erlang.phash2(cursor)` - a check that catches truncated writes or
+  accidental key reuse.
+
+  If the hash fails the walker falls back to `origin/0` and replays in full (safe because `handle_completed/1` is
   idempotent against an already-advanced program tree).
 
   ## Tick interval
 
   `@poll_interval_ms` controls how frequently the walker checks for new completions.
-  It is intentionally short relative to the scheduler's 1-second loop — the walker
+  It is intentionally short relative to the scheduler's 1-second loop; the walker
   should emit `Ready` events for subsequent tasks before the next scheduler tick.
   """
 
@@ -43,6 +35,7 @@ defmodule Stc.Interpreter.Distributed do
   alias Stc.Op
   alias Stc.Program.Store, as: ProgramStore
   alias Stc.Task.Result
+  alias Stc.Task.Store, as: TaskStore
 
   require Logger
 
@@ -55,18 +48,27 @@ defmodule Stc.Interpreter.Distributed do
   end
 
   @impl true
-  def init(%State{}) do
-    state = %State{cursor: load_cursor()}
+  def init(%State{} = state) do
+    {:ok, state, {:continue, :startup}}
+  end
+
+  @impl true
+  def handle_continue(:startup, %State{} = state) do
+    %State{} = state = %{state | cursor: load_cursor()}
     schedule_poll()
-    {:ok, state}
+    {:noreply, state}
   end
 
   @impl true
   def handle_info(:poll, %State{cursor: cursor} = state) do
     {:ok, events, new_cursor} =
-      Store.fetch(cursor, types: [Stc.Event.Completed], limit: 100)
+      Store.fetch(cursor, types: [Stc.Event.Completed, Stc.Event.Stop], limit: 100)
 
-    Enum.each(events, &handle_completed/1)
+    Enum.each(events, fn
+      %Stc.Event.Completed{} = e -> handle_completed(e)
+      %Stc.Event.Stop{workflow_id: wf_id} when is_binary(wf_id) -> handle_stopped(wf_id)
+      %Stc.Event.Stop{} -> :ok
+    end)
 
     if new_cursor != cursor, do: save_cursor(new_cursor)
 
@@ -92,9 +94,21 @@ defmodule Stc.Interpreter.Distributed do
 
     case ProgramStore.get(wf_id) do
       {:ok, program} ->
-        {next_program, ready_tasks} = next(program, task_id, result, wf_id)
-        ProgramStore.put(wf_id, next_program)
-        Enum.each(ready_tasks, &emit_ready(&1, wf_id))
+        try do
+          {next_program, ready_tasks} = next(program, task_id, result, wf_id)
+          ProgramStore.put(wf_id, next_program)
+          Enum.each(ready_tasks, &emit_ready(&1, wf_id))
+        rescue
+          err ->
+            Logger.error(
+              "Distributed walker: raised advancing workflow_id=#{wf_id}, task_id=#{task_id}:\n#{Exception.format(:error, err, __STACKTRACE__)}"
+            )
+        catch
+          kind, payload ->
+            Logger.error(
+              "Distributed walker: threw advancing workflow_id=#{wf_id}, task_id=#{task_id}:\n#{Exception.format(kind, payload, __STACKTRACE__)}"
+            )
+        end
 
       {:error, :not_found} ->
         Logger.warning(
@@ -103,9 +117,80 @@ defmodule Stc.Interpreter.Distributed do
     end
   end
 
+  @spec handle_stopped(String.t()) :: :ok
+  defp handle_stopped(workflow_id) do
+    case ProgramStore.delete(workflow_id) do
+      :ok ->
+        :ok
+
+      {:error, reason} ->
+        Logger.warning(
+          "Distributed walker: failed to delete program for #{workflow_id}: #{inspect(reason)}"
+        )
+    end
+  end
+
   @spec emit_ready(map(), String.t()) :: :ok
+
+  # Store-backed task: check cache first; emit Completed on hit, Ready on miss.
   defp emit_ready(
-         %{task_id: task_id, module: module, payload: payload, policies: policies},
+         %{
+           task_id: task_id,
+           module: module,
+           payload: payload,
+           policies: policies,
+           space_affinity: space_affinity,
+           cluster_affinity: cluster_affinity,
+           scheduler_affinity: scheduler_affinity,
+           duration_ms: duration_ms,
+           content_hash: hash
+         },
+         wf_id
+       )
+       when is_binary(hash) do
+    case TaskStore.get(hash) do
+      {:ok, cached_result} ->
+        {:ok, _} =
+          Store.append(%Stc.Event.Completed{
+            workflow_id: wf_id,
+            task_id: task_id,
+            result: cached_result,
+            timestamp: DateTime.utc_now()
+          })
+
+        :ok
+
+      {:error, :not_found} ->
+        {:ok, _} =
+          Store.append(%Stc.Event.Ready{
+            workflow_id: wf_id,
+            task_id: task_id,
+            module: module,
+            payload: payload,
+            policies: policies,
+            space_affinity: space_affinity,
+            cluster_affinity: cluster_affinity,
+            scheduler_affinity: scheduler_affinity,
+            content_hash: hash,
+            duration_ms: duration_ms,
+            timestamp: DateTime.utc_now()
+          })
+
+        :ok
+    end
+  end
+
+  defp emit_ready(
+         %{
+           task_id: task_id,
+           module: module,
+           payload: payload,
+           policies: policies,
+           space_affinity: space_affinity,
+           cluster_affinity: cluster_affinity,
+           scheduler_affinity: scheduler_affinity,
+           duration_ms: duration_ms
+         },
          wf_id
        ) do
     event = %Stc.Event.Ready{
@@ -114,6 +199,10 @@ defmodule Stc.Interpreter.Distributed do
       module: module,
       payload: payload,
       policies: policies,
+      space_affinity: space_affinity,
+      cluster_affinity: cluster_affinity,
+      scheduler_affinity: scheduler_affinity,
+      duration_ms: duration_ms,
       timestamp: DateTime.utc_now()
     }
 
@@ -242,17 +331,93 @@ defmodule Stc.Interpreter.Distributed do
   defp extract_ready_tasks({:pure, _}, _workflow_id), do: []
 
   defp extract_ready_tasks(
-         {:free, %Op.Run{task_id: nil, module: mod, payload: p, policies: policies}, _cont_fn},
+         {:free,
+          %Op.Run{
+            task_id: id,
+            module: mod,
+            payload: p,
+            policies: policies,
+            space_affinity: space_affinity,
+            cluster_affinity: cluster_affinity,
+            scheduler_affinity: scheduler_affinity,
+            duration_ms: duration_ms,
+            store: true
+          }, _cont_fn},
          _workflow_id
        ) do
-    [%{task_id: Ecto.UUID.generate(), module: mod, payload: p, policies: policies}]
+    task_id = id || Ecto.UUID.generate()
+
+    [
+      %{
+        task_id: task_id,
+        module: mod,
+        payload: p,
+        policies: policies,
+        space_affinity: space_affinity,
+        cluster_affinity: cluster_affinity,
+        scheduler_affinity: scheduler_affinity,
+        duration_ms: duration_ms,
+        content_hash: TaskStore.content_hash(mod, p)
+      }
+    ]
   end
 
   defp extract_ready_tasks(
-         {:free, %Op.Run{task_id: id, module: mod, payload: p, policies: policies}, _cont_fn},
+         {:free,
+          %Op.Run{
+            task_id: nil,
+            module: mod,
+            payload: p,
+            policies: policies,
+            space_affinity: space_affinity,
+            cluster_affinity: cluster_affinity,
+            scheduler_affinity: scheduler_affinity,
+            duration_ms: duration_ms
+          }, _cont_fn},
          _workflow_id
        ) do
-    [%{task_id: id, module: mod, payload: p, policies: policies}]
+    [
+      %{
+        task_id: Ecto.UUID.generate(),
+        module: mod,
+        payload: p,
+        policies: policies,
+        space_affinity: space_affinity,
+        cluster_affinity: cluster_affinity,
+        scheduler_affinity: scheduler_affinity,
+        duration_ms: duration_ms,
+        content_hash: nil
+      }
+    ]
+  end
+
+  defp extract_ready_tasks(
+         {:free,
+          %Op.Run{
+            task_id: id,
+            module: mod,
+            payload: p,
+            policies: policies,
+            space_affinity: space_affinity,
+            cluster_affinity: cluster_affinity,
+            scheduler_affinity: scheduler_affinity,
+            duration_ms: duration_ms
+          }, _cont_fn},
+         _workflow_id
+       ) do
+    [
+      %{
+        task_id: id,
+        module: mod,
+        payload: p,
+        policies: policies,
+        space_affinity: space_affinity,
+        cluster_affinity: cluster_affinity,
+        scheduler_affinity: scheduler_affinity,
+        duration_ms: duration_ms,
+        content_hash: nil
+      }
+    ]
   end
 
   defp extract_ready_tasks(

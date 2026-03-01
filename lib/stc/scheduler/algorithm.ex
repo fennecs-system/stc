@@ -70,10 +70,28 @@ defmodule Stc.Scheduler.Algorithm do
   @doc "Reconciles stale agents (e.g. timed-out or unresponsive). Default: no-op."
   @callback reconcile_stale_agents(state :: State.t()) :: State.t()
 
+  @doc """
+  Called when an agent's health tolerance window expires and its tasks must be handled.
+
+  Return `{:reschedule, task_id}` to preempt the task and re-emit `Ready` for
+  rescheduling on fresh agents. Return `{:fail, task_id}` to emit a hard failure
+  (`Failed{reason: {:agent_unavailable, agent_id}}`).
+
+  Default: always reschedules. The existing `Pending` mechanism handles the case
+  where no agents are immediately available — the task waits until capacity returns.
+  Override to return `:fail` when the space definitively has no spare agents.
+  """
+  @callback on_agent_eviction(
+              agent :: Stc.Agent.t(),
+              affected :: [{task_id :: String.t(), Stc.Event.Ready.t()}],
+              state :: State.t()
+            ) :: [{:reschedule | :fail, task_id :: String.t()}]
+
   @optional_callbacks [
     agent_matches_requirements?: 2,
     can_oversubscribe?: 3,
-    reconcile_stale_agents: 1
+    reconcile_stale_agents: 1,
+    on_agent_eviction: 3
   ]
 
   defmacro __using__(_opts) do
@@ -89,9 +107,15 @@ defmodule Stc.Scheduler.Algorithm do
       @impl Stc.Scheduler.Algorithm
       def reconcile_stale_agents(state), do: state
 
+      @impl Stc.Scheduler.Algorithm
+      def on_agent_eviction(_agent, affected, _state) do
+        Enum.map(affected, fn {task_id, _ready} -> {:reschedule, task_id} end)
+      end
+
       defoverridable agent_matches_requirements?: 2,
                      can_oversubscribe?: 3,
-                     reconcile_stale_agents: 1
+                     reconcile_stale_agents: 1,
+                     on_agent_eviction: 3
     end
   end
 end
