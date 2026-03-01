@@ -64,6 +64,8 @@ defmodule Stc.Event do
     defstruct [:workflow_id, :task_id, :agent_ids, :result, :attempt, :timestamp]
   end
 
+  # planned - like kubernetes for failure states like no nodes
+  # or no budget or something that can be recovered
   defmodule Pending do
     @moduledoc false
 
@@ -90,6 +92,8 @@ defmodule Stc.Event do
     ]
   end
 
+  # planned -
+  # eg a cloud node died
   defmodule Preempted do
     @moduledoc false
 
@@ -120,6 +124,8 @@ defmodule Stc.Event do
     defstruct [:workflow_id, :task_id, :agent_ids, :reason, :retriable, :attempt, :timestamp]
   end
 
+  # planned
+  # maybe agents can send back a progress chunk
   defmodule Progress do
     @moduledoc false
 
