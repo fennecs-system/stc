@@ -15,7 +15,8 @@ defmodule Stc.Event do
             timestamp: DateTime.t() | nil,
             scheduled?: boolean() | nil,
             content_hash: String.t() | nil,
-            policies: Stc.Task.Policy.t() | nil
+            policies: Stc.Task.Policy.t() | nil,
+            schedule_attempts: non_neg_integer()
           }
 
     defstruct [
@@ -29,7 +30,8 @@ defmodule Stc.Event do
       cluster_affinity: nil,
       scheduler_affinity: nil,
       content_hash: nil,
-      policies: nil
+      policies: nil,
+      schedule_attempts: 0
     ]
   end
 
@@ -64,16 +66,26 @@ defmodule Stc.Event do
     defstruct [:workflow_id, :task_id, :agent_ids, :result, :attempt, :timestamp]
   end
 
-  # planned - like kubernetes for failure states like no nodes
-  # or no budget or something that can be recovered
   defmodule Pending do
-    @moduledoc false
+    @moduledoc """
+    Emitted when a task cannot be scheduled immediately.
+
+    Like Kubernetes `Pending` with `conditions`, this event carries all the information
+    the scheduler needs to re-attempt scheduling without consulting other sources.
+    Each re-attempt that still fails emits a new `Pending` with an incremented
+    `schedule_attempts` counter.
+    """
 
     @type t :: %__MODULE__{
             workflow_id: String.t() | nil,
             task_id: String.t() | nil,
             module: module() | nil,
             payload: map() | nil,
+            policies: Stc.Task.Policy.t() | nil,
+            space_affinity: term(),
+            cluster_affinity: term(),
+            scheduler_affinity: [atom()] | nil,
+            content_hash: String.t() | nil,
             conditions: term(),
             last_schedule_attempt: DateTime.t() | nil,
             schedule_attempts: non_neg_integer() | nil,
@@ -85,11 +97,29 @@ defmodule Stc.Event do
       :task_id,
       :module,
       :payload,
+      :policies,
+      :space_affinity,
+      :cluster_affinity,
+      :scheduler_affinity,
+      :content_hash,
       :conditions,
       :last_schedule_attempt,
       :schedule_attempts,
       :timestamp
     ]
+  end
+
+  defmodule Rejected do
+    @moduledoc "# planned - terminal event for permanently denied tasks"
+
+    @type t :: %__MODULE__{
+            workflow_id: String.t() | nil,
+            task_id: String.t() | nil,
+            reason: term(),
+            timestamp: DateTime.t() | nil
+          }
+
+    defstruct [:workflow_id, :task_id, :reason, :timestamp]
   end
 
   # planned -

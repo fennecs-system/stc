@@ -5,10 +5,11 @@ defmodule Stc.Scheduler.State do
   ## Event consumption model
 
   The scheduler maintains a `event_cursor` — an opaque position in the `EventLog` —
-  and advances it each tick by calling `Stc.Event.Store.fetch/2`. Events that could
-  not be acted on immediately (e.g. `Ready` events with no available agents) are kept
-  in `pending_ready` and retried on the next tick. All other event types are consumed
-  once and discarded from in-memory state.
+  and advances it each tick by calling `Stc.Event.Store.fetch/2`. When a `Ready` event
+  cannot be scheduled (no capacity, admit policy deferral), the scheduler emits an
+  `Event.Pending` back into the log with the blocking conditions. On the next tick the
+  scheduler re-reads the `Pending` event and re-attempts scheduling. This ensures
+  unscheduled tasks survive restarts and are visible in the event log.
 
   ## Affinity routing
 
@@ -43,13 +44,11 @@ defmodule Stc.Scheduler.State do
           event_loop_ref: reference() | nil,
           # Cursor into the EventLog; advances forward-only each tick.
           event_cursor: Stc.Backend.EventLog.cursor(),
-          # Ready events that couldn't be scheduled (no capacity); retried each tick.
-          pending_ready: [Stc.Event.Ready.t()],
           # pid of this scheduler's ReplyBuffer
           reply_buffer: pid(),
           # time in ms of tick rate - defaults to 1 sec
           scheduler_tick_rate_ms: integer(),
-          # Affinity dimensions for routing Ready events to this scheduler.
+          # Affinity dimensions for routing Ready/Pending events to this scheduler.
           tags: [atom()],
           space_id: String.t() | nil,
           cluster_id: String.t() | nil
@@ -70,7 +69,6 @@ defmodule Stc.Scheduler.State do
     :scheduler_tick_rate_ms,
     :space_id,
     :cluster_id,
-    pending_ready: [],
     tags: []
   ]
 end

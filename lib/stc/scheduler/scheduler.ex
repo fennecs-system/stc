@@ -4,18 +4,16 @@ defmodule Stc.Scheduler do
 
   ## Event consumption
 
-  Each tick the scheduler:
+  Each tick the scheduler fetches all new events since `event_cursor` from the `EventLog`
+  and advances the cursor. This is a single pull per tick; the scheduler never depends on
+  backend push semantics. Each event is dispatched:
 
-  1. Retries `pending_ready` — `Ready` events buffered from prior ticks because no
-     agents had capacity.
-  2. Fetches all new events since `event_cursor` from the `EventLog` and advances the
-     cursor. This is a single pull per tick; the scheduler never depends on backend push
-     semantics.
-  3. Dispatches each event to `schedule_task/2`:
-     - `Ready`     → lock + select agents + spawn executor; on failure keep in
-                     `pending_ready`.
-     - `Started`   → no-op (scheduler has already handed off; executor drives this).
-     - `Completed` → clean up active-task tracking.
+  - `Ready`   → lock + select agents + spawn executor; on failure emit `Event.Pending`
+                into the log with the blocking conditions. No in-memory retry buffer.
+  - `Pending` → re-attempt scheduling directly; on failure emit a new `Event.Pending`
+                with an incremented `schedule_attempts` counter.
+  - `Started`   → no-op (scheduler has already handed off; executor drives this).
+  - `Completed` → clean up active-task tracking.
 
   ## Distributed safety
 
@@ -93,7 +91,6 @@ defmodule Stc.Scheduler do
       active_tasks: %{},
       event_loop_ref: nil,
       event_cursor: Store.origin(),
-      pending_ready: [],
       reply_buffer: reply_buffer_pid,
       scheduler_tick_rate_ms:
         Keyword.get(opts, :scheduler_tick_rate_ms, @default_scheduler_tick_rate_ms),
@@ -112,7 +109,6 @@ defmodule Stc.Scheduler do
       |> refresh_agent_pool()
       |> reconcile_stale_agents()
       |> process_agent_buffer()
-      |> retry_pending_ready()
       |> fetch_and_dispatch_new_events()
 
     Logger.debug("Scheduler #{state.id} event loop completed.")
@@ -150,23 +146,6 @@ defmodule Stc.Scheduler do
     %State{state | event_loop_ref: new_ref}
   end
 
-  # Retry Ready events that had no agent capacity on a previous tick.
-  @spec retry_pending_ready(State.t()) :: State.t()
-  defp retry_pending_ready(%State{pending_ready: []} = state), do: state
-
-  defp retry_pending_ready(%State{pending_ready: pending} = state) do
-    {still_pending, %State{} = new_state} =
-      Enum.reduce(pending, {[], state}, fn %Stc.Event.Ready{} = event, {acc_pending, acc_state} ->
-        case try_schedule_ready(event, acc_state) do
-          {:ok, next_state} -> {acc_pending, next_state}
-          {:error, :no_capacity, next_state} -> {[event | acc_pending], next_state}
-          {:error, _other, next_state} -> {acc_pending, next_state}
-        end
-      end)
-
-    %State{new_state | pending_ready: Enum.reverse(still_pending)}
-  end
-
   # Pull all new events from the log since our cursor, then dispatch each.
   @spec fetch_and_dispatch_new_events(State.t()) :: State.t()
   defp fetch_and_dispatch_new_events(%State{event_cursor: cursor} = state) do
@@ -183,15 +162,59 @@ defmodule Stc.Scheduler do
   defp dispatch_event(%Stc.Event.Ready{} = event, %State{} = state) do
     if matches_this_scheduler?(event, state) do
       case try_schedule_ready(event, state) do
-        {:ok, new_state} -> new_state
-        {:error, :no_capacity, new_state} -> buffer_pending(new_state, event)
-        {:error, :rejected, new_state} -> buffer_pending(new_state, event)
-        {:error, _other, new_state} -> new_state
+        {:ok, new_state} ->
+          new_state
+
+        {:error, :no_capacity, new_state} ->
+          emit_pending(event, :no_capacity)
+          new_state
+
+        {:error, {:pending, cond}, new_state} ->
+          emit_pending(event, cond)
+          new_state
+
+        {:error, :rejected, new_state} ->
+          emit_pending(event, :rejected)
+          new_state
+
+        {:error, _other, new_state} ->
+          new_state
       end
     else
       state
     end
   end
+
+  defp dispatch_event(%Stc.Event.Pending{} = pending, %State{} = state) do
+    if matches_this_scheduler?(pending, state) do
+      ready = pending_to_ready(pending)
+
+      case try_schedule_ready(ready, state) do
+        {:ok, new_state} ->
+          new_state
+
+        {:error, :no_capacity, new_state} ->
+          emit_pending(ready, :no_capacity)
+          new_state
+
+        {:error, {:pending, cond}, new_state} ->
+          emit_pending(ready, cond)
+          new_state
+
+        {:error, :rejected, new_state} ->
+          emit_pending(ready, :rejected)
+          new_state
+
+        {:error, _other, new_state} ->
+          new_state
+      end
+    else
+      state
+    end
+  end
+
+  # planned - no terminal handling yet; struct exists for log visibility
+  defp dispatch_event(%Stc.Event.Rejected{}, %State{} = state), do: state
 
   defp dispatch_event(%Stc.Event.Completed{task_id: task_id}, %State{} = state) do
     cleanup_task(state, task_id)
@@ -201,11 +224,15 @@ defmodule Stc.Scheduler do
 
   defp dispatch_event(_unknown, %State{} = state), do: state
 
-  @spec matches_this_scheduler?(Stc.Event.Ready.t(), State.t()) :: boolean()
-  defp matches_this_scheduler?(event, state) do
-    tags_match?(event.scheduler_affinity, state.tags) and
-      space_match?(event.space_affinity, state.space_id) and
-      cluster_match?(event.cluster_affinity, state.cluster_id)
+  @spec matches_this_scheduler?(Stc.Event.Ready.t() | Stc.Event.Pending.t(), State.t()) ::
+          boolean()
+  defp matches_this_scheduler?(
+         %{scheduler_affinity: sa, space_affinity: spa, cluster_affinity: ca},
+         state
+       ) do
+    tags_match?(sa, state.tags) and
+      space_match?(spa, state.space_id) and
+      cluster_match?(ca, state.cluster_id)
   end
 
   defp tags_match?(nil, _), do: true
@@ -222,7 +249,8 @@ defmodule Stc.Scheduler do
 
   @spec try_schedule_ready(Stc.Event.Ready.t(), State.t()) ::
           {:ok, State.t()}
-          | {:error, :no_capacity | :locked | :rejected | :failed_to_spawn, State.t()}
+          | {:error, :no_capacity | :locked | :rejected | :failed_to_spawn | {:pending, term()},
+             State.t()}
   defp try_schedule_ready(%Stc.Event.Ready{} = event, %State{} = state) do
     with {:ok, locked_state} <- try_acquire_lock(event.task_id, state),
          {:ok, agents} <- select_agents_for_event(event, locked_state),
@@ -233,12 +261,13 @@ defmodule Stc.Scheduler do
       {:error, :locked} -> {:error, :locked, state}
       {:error, :no_capacity} -> {:error, :no_capacity, state}
       {:error, :rejected} -> {:error, :rejected, state}
+      {:error, {:pending, cond}} -> {:error, {:pending, cond}, state}
       {:error, :failed_to_spawn} -> {:error, :failed_to_spawn, state}
     end
   end
 
   @spec check_admit_policies(Stc.Event.Ready.t(), [Stc.Agent.t()], State.t()) ::
-          :ok | {:error, :rejected}
+          :ok | {:error, :rejected | {:pending, term()}}
   defp check_admit_policies(%Stc.Event.Ready{policies: nil}, _agents, _state), do: :ok
   defp check_admit_policies(%Stc.Event.Ready{policies: %{admit: []}}, _agents, _state), do: :ok
 
@@ -259,6 +288,9 @@ defmodule Stc.Scheduler do
         :ok ->
           {:cont, :ok}
 
+        {:pending, cond} ->
+          {:halt, {:error, {:pending, cond}}}
+
         {:reject, reason} ->
           Logger.warning(
             "Task #{event.task_id} rejected by #{inspect(policy.__struct__)}: #{inspect(reason)}"
@@ -269,9 +301,40 @@ defmodule Stc.Scheduler do
     end)
   end
 
-  @spec buffer_pending(State.t(), Stc.Event.Ready.t()) :: State.t()
-  defp buffer_pending(%State{pending_ready: pending} = state, %Stc.Event.Ready{} = event) do
-    %State{state | pending_ready: [event | pending]}
+  @spec pending_to_ready(Stc.Event.Pending.t()) :: Stc.Event.Ready.t()
+  defp pending_to_ready(%Stc.Event.Pending{} = p) do
+    %Stc.Event.Ready{
+      workflow_id: p.workflow_id,
+      task_id: p.task_id,
+      module: p.module,
+      payload: p.payload,
+      policies: p.policies,
+      space_affinity: p.space_affinity,
+      cluster_affinity: p.cluster_affinity,
+      scheduler_affinity: p.scheduler_affinity,
+      content_hash: p.content_hash,
+      schedule_attempts: p.schedule_attempts,
+      timestamp: DateTime.utc_now()
+    }
+  end
+
+  @spec emit_pending(Stc.Event.Ready.t(), term()) :: {:ok, term()} | {:error, term()}
+  defp emit_pending(%Stc.Event.Ready{} = event, conditions) do
+    Store.append(%Stc.Event.Pending{
+      workflow_id: event.workflow_id,
+      task_id: event.task_id,
+      module: event.module,
+      payload: event.payload,
+      policies: event.policies,
+      space_affinity: event.space_affinity,
+      cluster_affinity: event.cluster_affinity,
+      scheduler_affinity: event.scheduler_affinity,
+      content_hash: event.content_hash,
+      conditions: conditions,
+      schedule_attempts: event.schedule_attempts + 1,
+      last_schedule_attempt: DateTime.utc_now(),
+      timestamp: DateTime.utc_now()
+    })
   end
 
   @spec try_acquire_lock(String.t(), State.t()) :: {:ok, State.t()} | {:error, :locked}
