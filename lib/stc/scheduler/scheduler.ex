@@ -100,8 +100,10 @@ defmodule Stc.Scheduler do
       agent_pool: %{},
       algorithm: Keyword.fetch!(opts, :algorithm),
       agent_tasks: %{},
+      task_agents: %{},
       task_locks: %{},
-      active_tasks: %{},
+      task_to_executor_pid: %{},
+      executor_pid_to_task: %{},
       event_loop_ref: nil,
       event_cursor: Store.origin(),
       reply_buffer: nil,
@@ -169,20 +171,20 @@ defmodule Stc.Scheduler do
   end
 
   @impl true
-  def handle_info({:DOWN, _ref, :process, pid, _reason}, %State{} = state) do
-    case Enum.find(state.active_tasks, fn {_task_id, task_pid} -> task_pid == pid end) do
-      nil ->
-        {:noreply, state}
+  def handle_info(
+        {:DOWN, _ref, :process, pid, _reason},
+        %State{executor_pid_to_task: pmap} = state
+      )
+      when is_map_key(pmap, pid) do
+    task_id = Map.fetch!(pmap, pid)
+    # handle_preempted reads active_task_info before teardown so a preempted executor
+    # that dies before its Preempted event is processed still gets its Ready re-emitted.
+    # For non-preempted tasks maybe_reschedule is a no-op.
+    {:noreply, Runtime.handle_preempted(task_id, state)}
+  end
 
-      {task_id, _pid} ->
-        %State{} =
-          new_state =
-          state
-          |> Runtime.teardown_task(task_id)
-          |> Map.update!(:preempting_task_ids, &if(&1, do: MapSet.delete(&1, task_id), else: &1))
-
-        {:noreply, new_state}
-    end
+  def handle_info({:DOWN, _ref, :process, _pid, _reason}, %State{} = state) do
+    {:noreply, state}
   end
 
   @spec schedule_event_loop(State.t()) :: State.t()
@@ -233,7 +235,7 @@ defmodule Stc.Scheduler do
   end
 
   defp handle_event(%Stc.Event.Stop{task_id: nil, workflow_id: wf_id}, %State{} = state) do
-    task_ids = Map.get(state.workflow_tasks, wf_id, [])
+    task_ids = Map.get(state.workflow_tasks, wf_id, MapSet.new())
     Enum.each(task_ids, &send_cancel(&1, state))
     new_stopped = Enum.reduce(task_ids, state.stopped_task_ids, &MapSet.put(&2, &1))
     %State{state | stopped_task_ids: new_stopped}
@@ -367,17 +369,21 @@ defmodule Stc.Scheduler do
         # monitor so we can cleanup
         Process.monitor(pid)
 
+        agent_ids = Enum.map(agents, & &1.id)
+
         {:ok,
          %State{
            state
-           | active_tasks: Map.put(state.active_tasks, event.task_id, pid),
+           | task_to_executor_pid: Map.put(state.task_to_executor_pid, event.task_id, pid),
+             executor_pid_to_task: Map.put(state.executor_pid_to_task, pid, event.task_id),
              agent_tasks: register_agent_tasks(state.agent_tasks, agents, event.task_id),
+             task_agents: Map.put(state.task_agents, event.task_id, agent_ids),
              workflow_tasks:
                Map.update(
                  state.workflow_tasks,
                  event.workflow_id,
-                 [event.task_id],
-                 &[event.task_id | &1]
+                 MapSet.new([event.task_id]),
+                 &MapSet.put(&1, event.task_id)
                ),
              active_task_info: Map.put(state.active_task_info, event.task_id, event)
          }}
@@ -401,7 +407,7 @@ defmodule Stc.Scheduler do
   # tell the executor to cancel
 
   @spec send_cancel(String.t(), State.t()) :: :ok
-  defp send_cancel(task_id, %State{active_tasks: active}) do
+  defp send_cancel(task_id, %State{task_to_executor_pid: active}) do
     case Map.get(active, task_id) do
       nil -> :ok
       pid -> send(pid, :cancel)

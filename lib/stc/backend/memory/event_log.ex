@@ -102,13 +102,17 @@ defmodule Stc.Backend.Memory.EventLog do
     task_id = Keyword.get(opts, :task_id, :any)
     workflow_id = Keyword.get(opts, :workflow_id, :any)
 
+    # Sort integer keys first so downstream filters can terminate early via Enum.take,
+    # avoiding materialising the entire filtered set before applying the limit.
     result =
       events
-      |> Stream.filter(fn {seq, _event} -> seq > cursor end)
+      |> Map.keys()
+      |> Enum.filter(fn seq -> seq > cursor end)
+      |> Enum.sort()
+      |> Stream.map(fn seq -> {seq, Map.fetch!(events, seq)} end)
       |> Stream.filter(fn {_seq, event} -> type_matches?(event, types) end)
       |> Stream.filter(fn {_seq, event} -> field_matches?(event, :task_id, task_id) end)
       |> Stream.filter(fn {_seq, event} -> field_matches?(event, :workflow_id, workflow_id) end)
-      |> Enum.sort_by(fn {seq, _event} -> seq end)
       |> Enum.take(limit)
 
     case result do

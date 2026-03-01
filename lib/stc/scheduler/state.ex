@@ -38,10 +38,14 @@ defmodule Stc.Scheduler.State do
           algorithm: module(),
           # agent_id => [task_id]
           agent_tasks: %{String.t() => [String.t()]},
+          # task_id => [agent_id]; reverse of agent_tasks for targeted cleanup without a full map rebuild
+          task_agents: %{String.t() => [String.t()]},
           # task_id => lock term acquired via Event.Store.try_lock/3
           task_locks: %{String.t() => term()},
           # task_id => executor pid
-          active_tasks: %{String.t() => pid()},
+          task_to_executor_pid: %{String.t() => pid()},
+          # executor pid => task_id; reverse of task_to_executor_pid for O(1) :DOWN lookup
+          executor_pid_to_task: %{pid() => String.t()},
           event_loop_ref: reference() | nil,
           # Cursor into the EventLog; advances forward-only each tick.
           event_cursor: Stc.Backend.EventLog.cursor(),
@@ -53,8 +57,8 @@ defmodule Stc.Scheduler.State do
           tags: [atom()],
           space_id: String.t() | nil,
           cluster_id: String.t() | nil,
-          # workflow_id => [task_id]; populated on spawn, pruned on completion.
-          workflow_tasks: %{String.t() => [String.t()]},
+          # workflow_id => MapSet of task_ids currently active; populated on spawn, pruned on completion.
+          workflow_tasks: %{String.t() => MapSet.t(String.t())},
           # task_ids for which Stop has been seen; guards Ready/Pending dispatch.
           stopped_task_ids: MapSet.t() | nil,
           # agent_id => {timer_ref, Agent.t()}; tracks health-toleration timers.
@@ -71,8 +75,10 @@ defmodule Stc.Scheduler.State do
     :agent_pool,
     :algorithm,
     :agent_tasks,
+    :task_agents,
     :task_locks,
-    :active_tasks,
+    :task_to_executor_pid,
+    :executor_pid_to_task,
     :event_loop_ref,
     :event_cursor,
     :reply_buffer,

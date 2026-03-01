@@ -369,9 +369,7 @@ defmodule Stc.Scheduler.Executor do
   def handle_info(_msg, %State{} = state), do: {:noreply, state}
 
   @impl true
-  def terminate(_reason, %State{reply_buffer: rb, task_id: task_id}) do
-    ReplyBuffer.unregister_executor(rb, task_id)
-  end
+  def terminate(_reason, %State{}), do: :ok
 
   @spec to_context(State.t()) :: Context.t()
   defp to_context(%State{} = state) do

@@ -21,11 +21,15 @@ defmodule Stc.Scheduler.Runtime do
 
   - Releases the distributed lock held by the scheduler for this task.
   - Prunes the task_id from `stopped_task_ids` (prevents unbounded growth).
-  - Removes the task from all active-tracking maps (`active_tasks`, `agent_tasks`,
+  - Unregisters the executor from the `ReplyBuffer`.
+  - Removes the task from all active-tracking maps (`task_to_executor_pid`, `agent_tasks`,
     `workflow_tasks`, `active_task_info`), pruning empty workflow entries.
 
   It is idempotent and called from both event-based paths (`Completed`, `Failed`) and the
   executor `:DOWN` handler, whichever fires first; the second call is a no-op.
+  The `:DOWN` handler calls `handle_preempted/2` rather than `teardown_task/2` directly so
+  that a preempted executor that dies before its `Preempted` event is read still gets its
+  `Ready` re-emitted.
 
   ## Agent status semantics
 
@@ -38,6 +42,7 @@ defmodule Stc.Scheduler.Runtime do
   """
 
   alias Stc.Event.Store
+  alias Stc.ReplyBuffer
   alias Stc.Scheduler.State
 
   @default_unhealthy_toleration_ms :timer.minutes(5)
@@ -112,34 +117,55 @@ defmodule Stc.Scheduler.Runtime do
 
   @doc "Removes a task from all active-task tracking maps. Prefer `teardown_task/2` on terminal paths."
   @spec cleanup_task(State.t(), String.t()) :: State.t()
-  def cleanup_task(%State{active_tasks: active} = state, task_id)
-      when is_map_key(active, task_id) do
-    {_pid, new_active} = Map.pop(active, task_id)
+  def cleanup_task(%State{task_to_executor_pid: t2p} = state, task_id)
+      when is_map_key(t2p, task_id) do
+    {pid, new_t2p} = Map.pop(t2p, task_id)
+
+    ReplyBuffer.unregister_executor(state.reply_buffer, task_id)
+
+    # Only touch the agents that were actually assigned to this task.
+    agent_ids = Map.get(state.task_agents, task_id, [])
 
     new_agent_tasks =
-      Map.new(state.agent_tasks, fn {aid, task_ids} ->
-        {aid, Enum.reject(task_ids, &(&1 == task_id))}
+      Enum.reduce(agent_ids, state.agent_tasks, fn aid, acc ->
+        Map.update(acc, aid, [], &Enum.reject(&1, fn tid -> tid == task_id end))
       end)
 
-    # Prune entries whose task list became empty to prevent unbounded growth.
+    # Use the stored Ready event to find the workflow rather than scanning all workflows.
     new_workflow_tasks =
-      Enum.reduce(state.workflow_tasks, %{}, fn {wf, ids}, acc ->
-        case Enum.reject(ids, &(&1 == task_id)) do
-          [] -> acc
-          filtered -> Map.put(acc, wf, filtered)
-        end
-      end)
+      case Map.get(state.active_task_info, task_id) do
+        nil -> state.workflow_tasks
+        %{workflow_id: wf_id} -> prune_workflow_task(state.workflow_tasks, wf_id, task_id)
+      end
 
     %State{
       state
-      | active_tasks: new_active,
+      | task_to_executor_pid: new_t2p,
+        executor_pid_to_task: Map.delete(state.executor_pid_to_task, pid),
         agent_tasks: new_agent_tasks,
+        task_agents: Map.delete(state.task_agents, task_id),
         workflow_tasks: new_workflow_tasks,
         active_task_info: Map.delete(state.active_task_info, task_id)
     }
   end
 
   def cleanup_task(%State{} = state, _task_id), do: state
+
+  @spec prune_workflow_task(%{String.t() => [String.t()]}, String.t(), String.t()) ::
+          %{String.t() => [String.t()]}
+  defp prune_workflow_task(workflow_tasks, wf_id, task_id) do
+    case Map.get(workflow_tasks, wf_id) do
+      nil ->
+        workflow_tasks
+
+      ids ->
+        remaining = MapSet.delete(ids, task_id)
+
+        if MapSet.size(remaining) == 0,
+          do: Map.delete(workflow_tasks, wf_id),
+          else: Map.put(workflow_tasks, wf_id, remaining)
+    end
+  end
 
   #
   # private
@@ -258,7 +284,7 @@ defmodule Stc.Scheduler.Runtime do
   @spec apply_eviction_action({:reschedule | :fail, String.t()}, String.t(), State.t()) ::
           State.t()
   defp apply_eviction_action({:reschedule, task_id}, agent_id, state) do
-    case Map.get(state.active_tasks, task_id) do
+    case Map.get(state.task_to_executor_pid, task_id) do
       nil ->
         state
 
@@ -269,7 +295,7 @@ defmodule Stc.Scheduler.Runtime do
   end
 
   defp apply_eviction_action({:fail, task_id}, agent_id, state) do
-    case Map.get(state.active_tasks, task_id) do
+    case Map.get(state.task_to_executor_pid, task_id) do
       nil -> :ok
       pid -> send(pid, {:cancel, {:agent_unavailable, agent_id}})
     end
