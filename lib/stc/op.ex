@@ -13,6 +13,7 @@ defmodule Stc.Op do
       :space_affinity,
       :scheduler_affinity,
       :agent_affinity,
+      :duration_ms,
       store: false,
       policies: %Stc.Task.Policy{}
     ]

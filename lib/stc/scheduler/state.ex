@@ -45,13 +45,23 @@ defmodule Stc.Scheduler.State do
           # Cursor into the EventLog; advances forward-only each tick.
           event_cursor: Stc.Backend.EventLog.cursor(),
           # pid of this scheduler's ReplyBuffer
-          reply_buffer: pid(),
+          reply_buffer: pid() | nil,
           # time in ms of tick rate - defaults to 1 sec
           scheduler_tick_rate_ms: integer(),
           # Affinity dimensions for routing Ready/Pending events to this scheduler.
           tags: [atom()],
           space_id: String.t() | nil,
-          cluster_id: String.t() | nil
+          cluster_id: String.t() | nil,
+          # workflow_id => [task_id]; populated on spawn, pruned on completion.
+          workflow_tasks: %{String.t() => [String.t()]},
+          # task_ids for which Stop has been seen; guards Ready/Pending dispatch.
+          stopped_task_ids: MapSet.t() | nil,
+          # agent_id => {timer_ref, Agent.t()}; tracks health-toleration timers.
+          agent_health_timers: %{String.t() => {reference(), Stc.Agent.t()}},
+          # task_id => Event.Ready.t(); snapshot stored at spawn for re-emission on preemption.
+          active_task_info: %{String.t() => Stc.Event.Ready.t()},
+          # task_ids for which the scheduler initiated preemption; Preempted event triggers re-emit Ready.
+          preempting_task_ids: MapSet.t()
         }
 
   defstruct [
@@ -69,6 +79,11 @@ defmodule Stc.Scheduler.State do
     :scheduler_tick_rate_ms,
     :space_id,
     :cluster_id,
-    tags: []
+    tags: [],
+    workflow_tasks: %{},
+    stopped_task_ids: nil,
+    agent_health_timers: %{},
+    active_task_info: %{},
+    preempting_task_ids: nil
   ]
 end

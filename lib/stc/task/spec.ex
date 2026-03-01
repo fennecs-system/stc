@@ -3,6 +3,7 @@ defmodule Stc.Task.Spec do
   Generic specification for a task
   """
 
+  alias Stc.Task.AgentHealthCheck
   alias Stc.Task.LivenessCheck
   alias Stc.Task.Policy
 
@@ -12,7 +13,9 @@ defmodule Stc.Task.Spec do
     :policies,
     :timeout_ms,
     :startup_timeout_ms,
-    liveness_check: nil
+    duration_ms: nil,
+    liveness_check: nil,
+    agent_health_check: nil
   ]
 
   @type t :: %__MODULE__{
@@ -21,7 +24,9 @@ defmodule Stc.Task.Spec do
           policies: Policy.t(),
           startup_timeout_ms: pos_integer() | nil,
           timeout_ms: pos_integer() | nil,
-          liveness_check: LivenessCheck.t() | nil
+          duration_ms: pos_integer() | nil,
+          liveness_check: LivenessCheck.t() | nil,
+          agent_health_check: AgentHealthCheck.t() | nil
         }
 
   @spec new(module(), map(), keyword()) :: t()
@@ -29,7 +34,9 @@ defmodule Stc.Task.Spec do
     policies = Keyword.get(opts, :policies, %Policy{})
     timeout_ms = Keyword.get(opts, :timeout_ms, :timer.hours(1))
     startup_timeout_ms = Keyword.get(opts, :startup_timeout_ms, :timer.hours(1))
+    duration_ms = Keyword.get(opts, :duration_ms, nil)
     liveness_check = Keyword.get(opts, :liveness_check, nil)
+    agent_health_check = Keyword.get(opts, :agent_health_check, nil)
 
     %__MODULE__{
       module: module,
@@ -37,7 +44,9 @@ defmodule Stc.Task.Spec do
       policies: policies,
       timeout_ms: timeout_ms,
       startup_timeout_ms: startup_timeout_ms,
-      liveness_check: liveness_check
+      duration_ms: duration_ms,
+      liveness_check: liveness_check,
+      agent_health_check: agent_health_check
     }
   end
 end

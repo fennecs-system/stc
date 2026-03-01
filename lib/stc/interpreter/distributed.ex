@@ -48,18 +48,27 @@ defmodule Stc.Interpreter.Distributed do
   end
 
   @impl true
-  def init(%State{}) do
-    state = %State{cursor: load_cursor()}
+  def init(%State{} = state) do
+    {:ok, state, {:continue, :startup}}
+  end
+
+  @impl true
+  def handle_continue(:startup, %State{} = state) do
+    %State{} = state = %{state | cursor: load_cursor()}
     schedule_poll()
-    {:ok, state}
+    {:noreply, state}
   end
 
   @impl true
   def handle_info(:poll, %State{cursor: cursor} = state) do
     {:ok, events, new_cursor} =
-      Store.fetch(cursor, types: [Stc.Event.Completed], limit: 100)
+      Store.fetch(cursor, types: [Stc.Event.Completed, Stc.Event.Stop], limit: 100)
 
-    Enum.each(events, &handle_completed/1)
+    Enum.each(events, fn
+      %Stc.Event.Completed{} = e -> handle_completed(e)
+      %Stc.Event.Stop{workflow_id: wf_id} when is_binary(wf_id) -> handle_stopped(wf_id)
+      %Stc.Event.Stop{} -> :ok
+    end)
 
     if new_cursor != cursor, do: save_cursor(new_cursor)
 
@@ -108,6 +117,19 @@ defmodule Stc.Interpreter.Distributed do
     end
   end
 
+  @spec handle_stopped(String.t()) :: :ok
+  defp handle_stopped(workflow_id) do
+    case ProgramStore.delete(workflow_id) do
+      :ok ->
+        :ok
+
+      {:error, reason} ->
+        Logger.warning(
+          "Distributed walker: failed to delete program for #{workflow_id}: #{inspect(reason)}"
+        )
+    end
+  end
+
   @spec emit_ready(map(), String.t()) :: :ok
 
   # Store-backed task: check cache first; emit Completed on hit, Ready on miss.
@@ -120,6 +142,7 @@ defmodule Stc.Interpreter.Distributed do
            space_affinity: space_affinity,
            cluster_affinity: cluster_affinity,
            scheduler_affinity: scheduler_affinity,
+           duration_ms: duration_ms,
            content_hash: hash
          },
          wf_id
@@ -149,6 +172,7 @@ defmodule Stc.Interpreter.Distributed do
             cluster_affinity: cluster_affinity,
             scheduler_affinity: scheduler_affinity,
             content_hash: hash,
+            duration_ms: duration_ms,
             timestamp: DateTime.utc_now()
           })
 
@@ -164,7 +188,8 @@ defmodule Stc.Interpreter.Distributed do
            policies: policies,
            space_affinity: space_affinity,
            cluster_affinity: cluster_affinity,
-           scheduler_affinity: scheduler_affinity
+           scheduler_affinity: scheduler_affinity,
+           duration_ms: duration_ms
          },
          wf_id
        ) do
@@ -177,6 +202,7 @@ defmodule Stc.Interpreter.Distributed do
       space_affinity: space_affinity,
       cluster_affinity: cluster_affinity,
       scheduler_affinity: scheduler_affinity,
+      duration_ms: duration_ms,
       timestamp: DateTime.utc_now()
     }
 
@@ -314,6 +340,7 @@ defmodule Stc.Interpreter.Distributed do
             space_affinity: space_affinity,
             cluster_affinity: cluster_affinity,
             scheduler_affinity: scheduler_affinity,
+            duration_ms: duration_ms,
             store: true
           }, _cont_fn},
          _workflow_id
@@ -329,6 +356,7 @@ defmodule Stc.Interpreter.Distributed do
         space_affinity: space_affinity,
         cluster_affinity: cluster_affinity,
         scheduler_affinity: scheduler_affinity,
+        duration_ms: duration_ms,
         content_hash: TaskStore.content_hash(mod, p)
       }
     ]
@@ -343,7 +371,8 @@ defmodule Stc.Interpreter.Distributed do
             policies: policies,
             space_affinity: space_affinity,
             cluster_affinity: cluster_affinity,
-            scheduler_affinity: scheduler_affinity
+            scheduler_affinity: scheduler_affinity,
+            duration_ms: duration_ms
           }, _cont_fn},
          _workflow_id
        ) do
@@ -356,6 +385,7 @@ defmodule Stc.Interpreter.Distributed do
         space_affinity: space_affinity,
         cluster_affinity: cluster_affinity,
         scheduler_affinity: scheduler_affinity,
+        duration_ms: duration_ms,
         content_hash: nil
       }
     ]
@@ -370,7 +400,8 @@ defmodule Stc.Interpreter.Distributed do
             policies: policies,
             space_affinity: space_affinity,
             cluster_affinity: cluster_affinity,
-            scheduler_affinity: scheduler_affinity
+            scheduler_affinity: scheduler_affinity,
+            duration_ms: duration_ms
           }, _cont_fn},
          _workflow_id
        ) do
@@ -383,6 +414,7 @@ defmodule Stc.Interpreter.Distributed do
         space_affinity: space_affinity,
         cluster_affinity: cluster_affinity,
         scheduler_affinity: scheduler_affinity,
+        duration_ms: duration_ms,
         content_hash: nil
       }
     ]

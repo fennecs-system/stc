@@ -145,6 +145,7 @@ defmodule Stc.Interpreter do
             cluster_affinity: cluster_affinity,
             scheduler_affinity: scheduler_affinity,
             policies: policies,
+            duration_ms: duration_ms,
             store: true
           }, _cont_fn},
          context
@@ -173,6 +174,7 @@ defmodule Stc.Interpreter do
           scheduler_affinity: scheduler_affinity,
           policies: policies,
           content_hash: hash,
+          duration_ms: duration_ms,
           timestamp: DateTime.utc_now()
         })
 
@@ -189,7 +191,8 @@ defmodule Stc.Interpreter do
             space_affinity: space_affinity,
             cluster_affinity: cluster_affinity,
             scheduler_affinity: scheduler_affinity,
-            policies: policies
+            policies: policies,
+            duration_ms: duration_ms
           }, _cont_fn},
          context
        ) do
@@ -203,6 +206,7 @@ defmodule Stc.Interpreter do
       cluster_affinity: cluster_affinity,
       scheduler_affinity: scheduler_affinity,
       policies: policies,
+      duration_ms: duration_ms,
       timestamp: DateTime.utc_now()
     }
 

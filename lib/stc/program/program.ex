@@ -26,6 +26,7 @@ defmodule Stc.Program do
        scheduler_affinity: Keyword.get(opts, :scheduler_affinity, nil),
        agent_affinity: Keyword.get(opts, :agent_affinity, nil),
        store: Keyword.get(opts, :store, false),
+       duration_ms: Keyword.get(opts, :duration_ms, nil),
        policies: build_policies(opts)
      }, fn result -> pure(result) end}
   end
@@ -41,6 +42,7 @@ defmodule Stc.Program do
        scheduler_affinity: Keyword.get(opts, :scheduler_affinity, nil),
        agent_affinity: Keyword.get(opts, :agent_affinity, nil),
        store: Keyword.get(opts, :store, false),
+       duration_ms: Keyword.get(opts, :duration_ms, nil),
        policies: build_policies(opts)
      }, fn result -> pure(result) end}
   end

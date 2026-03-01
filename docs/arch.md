@@ -26,3 +26,21 @@ Programs get submitted to an interpreter
 -> events picked up by scheduler 
 -> scheduler can assign tasks to `agents` basically just either a remote elixir process, a local async task, a task on another elixir node, something that runs over a websocket etc - flexible as long as they can reply to the scheduler via the buffer or the process directly
 -> 
+
+### Liveness checks 
+
+Tasks can fail for multiple reasons. Eg the task itself dies on the agent, or the agent dies entirely.
+
+```
+┌──────────────────┬────────────────────────────────┬─────────────────────────────────────────┐
+│                  │         Liveness check         │           Agent health check            │
+├──────────────────┼────────────────────────────────┼─────────────────────────────────────────┤
+│ Probe source     │ task_module.running?/3         │ refresh_agent_pool diff                 │
+├──────────────────┼────────────────────────────────┼─────────────────────────────────────────┤
+│ Failure tracking │ window + threshold on executor │ window + threshold on scheduler         │
+├──────────────────┼────────────────────────────────┼─────────────────────────────────────────┤
+│ Actor            │ executor                       │ scheduler                               │
+├──────────────────┼────────────────────────────────┼─────────────────────────────────────────┤
+│ Scope            │ is the work itself alive?      │ is the infrastructure running it alive? │
+└──────────────────┴────────────────────────────────┴─────────────────────────────────────────┘
+```
