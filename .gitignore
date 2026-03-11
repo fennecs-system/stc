@@ -28,3 +28,4 @@ stc-*.tar
 
 # ignore some docs
 docs/s3_download_index.md
+docs/notes.md
