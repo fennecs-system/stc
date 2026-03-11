@@ -28,6 +28,14 @@
   - requires `put_if_absent` on `Backend.KV` behaviour
     (in-memory: ETS `:insert_new`, postgres: `INSERT ... ON CONFLICT DO NOTHING`)
 
+- workflow Merkle hash - prove a workflow ran with specific task definitions and results
+  - `Event.WorkflowCompleted` carries `proof_hash = sha256(sorted(task_id <> content_hash <> result_hash))`
+    across all leaf tasks in the workflow; single hash proves every task's inputs and outputs
+  - result_hash = sha256(term_to_binary(result)); stored alongside result in TaskStore
+  - walker emits `WorkflowCompleted` when program tree is exhausted; scheduler or walker
+    verifies all task_ids in workflow_tasks have Completed events before emitting
+  - enables external audit: hand a single hash → verify against event log
+
 - tracing back cleanup - eg suppose the workflow is download => start container => stop => start =>
   delete. We can walk back all the `.clean` steps on each task.
   - scan event log for `Completed` events for workflow (ordered by timestamp), reverse, call

@@ -98,4 +98,13 @@ defmodule Stc.Backend.EventLog do
   incarnation of this scheduler that crashed before releasing them.
   """
   @callback release_locks_by_caller(caller_id :: term()) :: :ok
+
+  @doc """
+  Returns a map of event type name to count across the entire log.
+
+  Keys are the full module name strings as stored (e.g. `"Elixir.Stc.Event.Completed"`).
+  Implementations should perform this as a single aggregation query rather than
+  scanning and deserialising events.
+  """
+  @callback count_by_type() :: %{String.t() => non_neg_integer()}
 end

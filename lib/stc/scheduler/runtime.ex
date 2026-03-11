@@ -49,6 +49,8 @@ defmodule Stc.Scheduler.Runtime do
   alias Stc.ReplyBuffer
   alias Stc.Scheduler.State
 
+  require Logger
+
   @default_unhealthy_toleration_ms :timer.minutes(1)
   @default_unavailable_toleration_ms 0
 
@@ -98,11 +100,15 @@ defmodule Stc.Scheduler.Runtime do
   """
   @spec handle_preempted(String.t(), State.t()) :: State.t()
   def handle_preempted(task_id, %State{} = state) do
+    was_preempting? = task_id in state.preempting_task_ids
     ready = Map.get(state.active_task_info, task_id)
+    state = teardown_task(state, task_id)
+
+    if was_preempting? do
+      maybe_reemit_ready(ready)
+    end
 
     state
-    |> teardown_task(task_id)
-    |> maybe_reschedule(task_id, ready)
   end
 
   @doc """
@@ -149,7 +155,8 @@ defmodule Stc.Scheduler.Runtime do
         agent_tasks: new_agent_tasks,
         task_agents: Map.delete(state.task_agents, task_id),
         workflow_tasks: new_workflow_tasks,
-        active_task_info: Map.delete(state.active_task_info, task_id)
+        active_task_info: Map.delete(state.active_task_info, task_id),
+        preempting_task_ids: MapSet.delete(state.preempting_task_ids, task_id)
     }
   end
 
@@ -305,21 +312,18 @@ defmodule Stc.Scheduler.Runtime do
     state
   end
 
-  @spec maybe_reschedule(State.t(), String.t(), Stc.Event.Ready.t() | nil) :: State.t()
-  defp maybe_reschedule(%State{} = state, task_id, ready) do
-    if task_id in state.preempting_task_ids do
-      maybe_reemit_ready(ready)
-      %{state | preempting_task_ids: MapSet.delete(state.preempting_task_ids, task_id)}
-    else
-      state
-    end
-  end
-
   @spec maybe_reemit_ready(Stc.Event.Ready.t() | nil) :: :ok
   defp maybe_reemit_ready(nil), do: :ok
 
   defp maybe_reemit_ready(%Stc.Event.Ready{} = ready) do
-    Store.append(%{ready | timestamp: DateTime.utc_now(), schedule_attempts: 0})
-    :ok
+    case Store.append(%{ready | timestamp: DateTime.utc_now(), schedule_attempts: 0}) do
+      {:ok, _} ->
+        :ok
+
+      {:error, err} ->
+        Logger.error(
+          "Failed to re-emit Ready for task #{ready.task_id} after preemption — task is lost: #{inspect(err)}"
+        )
+    end
   end
 end

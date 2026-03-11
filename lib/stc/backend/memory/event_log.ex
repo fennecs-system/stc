@@ -85,6 +85,12 @@ defmodule Stc.Backend.Memory.EventLog do
     GenServer.call(__MODULE__, {:release_locks_by_caller, caller_id})
   end
 
+  @impl Stc.Backend.EventLog
+  @spec count_by_type() :: %{String.t() => non_neg_integer()}
+  def count_by_type do
+    GenServer.call(__MODULE__, :count_by_type)
+  end
+
   @impl true
   def init(%State{} = state) do
     {:ok, state}
@@ -93,7 +99,7 @@ defmodule Stc.Backend.Memory.EventLog do
   @impl true
   def handle_call({:append, event}, _from, %State{seq: seq, events: events} = state) do
     new_seq = seq + 1
-    new_state = %State{state | seq: new_seq, events: Map.put(events, new_seq, event)}
+    new_state = %{state | seq: new_seq, events: Map.put(events, new_seq, event)}
     {:reply, {:ok, new_seq}, new_state}
   end
 
@@ -136,7 +142,7 @@ defmodule Stc.Backend.Memory.EventLog do
       ) do
     case Map.get(locks, task_id) do
       nil ->
-        new_state = %State{state | locks: Map.put(locks, task_id, {lock, caller_id})}
+        new_state = %{state | locks: Map.put(locks, task_id, {lock, caller_id})}
         {:reply, {:ok, lock}, new_state}
 
       {existing_lock, ^caller_id} ->
@@ -152,7 +158,7 @@ defmodule Stc.Backend.Memory.EventLog do
   def handle_call({:release_lock, task_id, lock}, _from, %State{locks: locks} = state) do
     case Map.get(locks, task_id) do
       {^lock, _caller_id} ->
-        {:reply, :ok, %State{state | locks: Map.delete(locks, task_id)}}
+        {:reply, :ok, %{state | locks: Map.delete(locks, task_id)}}
 
       nil ->
         # Already released; treat as success (idempotent).
@@ -166,7 +172,18 @@ defmodule Stc.Backend.Memory.EventLog do
   @impl true
   def handle_call({:release_locks_by_caller, caller_id}, _from, %State{locks: locks} = state) do
     new_locks = Map.reject(locks, fn {_task_id, {_lock, cid}} -> cid == caller_id end)
-    {:reply, :ok, %State{state | locks: new_locks}}
+    {:reply, :ok, %{state | locks: new_locks}}
+  end
+
+  @impl true
+  def handle_call(:count_by_type, _from, %State{events: events} = state) do
+    counts =
+      Enum.reduce(events, %{}, fn {_seq, event}, acc ->
+        type = Atom.to_string(event.__struct__)
+        Map.update(acc, type, 1, &(&1 + 1))
+      end)
+
+    {:reply, counts, state}
   end
 
   @spec type_matches?(struct(), :all | [module()]) :: boolean()

@@ -66,7 +66,11 @@ defmodule Stc.Scheduler.State do
           # task_id => Event.Ready.t(); snapshot stored at spawn for re-emission on preemption.
           active_task_info: %{String.t() => Stc.Event.Ready.t()},
           # task_ids for which the scheduler initiated preemption; Preempted event triggers re-emit Ready.
-          preempting_task_ids: MapSet.t()
+          preempting_task_ids: MapSet.t(),
+          # When true, Ready/Pending events are skipped; existing executors run to completion.
+          draining: boolean(),
+          # GenServer.from() callers blocked on drain/1; replied to when task_to_executor_pid empties.
+          drain_callers: [GenServer.from()]
         }
 
   defstruct [
@@ -90,6 +94,8 @@ defmodule Stc.Scheduler.State do
     stopped_task_ids: MapSet.new(),
     agent_health_timers: %{},
     active_task_info: %{},
-    preempting_task_ids: MapSet.new()
+    preempting_task_ids: MapSet.new(),
+    draining: false,
+    drain_callers: []
   ]
 end

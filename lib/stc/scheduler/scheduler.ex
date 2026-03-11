@@ -71,6 +71,18 @@ defmodule Stc.Scheduler do
     })
   end
 
+  @doc """
+  Initiates a drain on the scheduler with the given id.
+
+  The scheduler stops accepting new `Ready`/`Pending` events. All in-flight
+  executors run to completion. Blocks until the scheduler is idle, then returns
+  `:ok`. Safe to call multiple times.
+  """
+  @spec drain(String.t(), timeout()) :: :ok
+  def drain(id, timeout \\ :timer.minutes(5)) do
+    GenServer.call(via(id), :drain, timeout)
+  end
+
   @doc "Returns [{id, pid}] for all running schedulers visible in the Horde registry."
   @spec list() :: [{String.t(), pid()}]
   def list do
@@ -135,6 +147,17 @@ defmodule Stc.Scheduler do
   end
 
   @impl true
+  def handle_call(:drain, from, %State{} = state) do
+    state = %{state | draining: true}
+
+    if map_size(state.task_to_executor_pid) == 0 do
+      {:reply, :ok, state}
+    else
+      {:noreply, %{state | drain_callers: [from | state.drain_callers]}}
+    end
+  end
+
+  @impl true
   def handle_info(:event_loop, %State{} = state) do
     old_pool = state.agent_pool
 
@@ -145,6 +168,7 @@ defmodule Stc.Scheduler do
       |> reconcile_stale_agents()
       |> process_agent_buffer()
       |> fetch_and_modify_state()
+      |> maybe_complete_drain()
 
     {:noreply, schedule_event_loop(state)}
   rescue
@@ -180,7 +204,10 @@ defmodule Stc.Scheduler do
     # handle_preempted reads active_task_info before teardown so a preempted executor
     # that dies before its Preempted event is processed still gets its Ready re-emitted.
     # For non-preempted tasks maybe_reschedule is a no-op.
-    {:noreply, Runtime.handle_preempted(task_id, state)}
+    # maybe_complete_drain is called here so drain completes promptly when the last
+    # executor dies, rather than waiting for the next event loop tick.
+    new_state = Runtime.handle_preempted(task_id, state)
+    {:noreply, maybe_complete_drain(new_state)}
   end
 
   @impl true
@@ -191,7 +218,7 @@ defmodule Stc.Scheduler do
   @spec schedule_event_loop(State.t()) :: State.t()
   defp schedule_event_loop(%State{event_loop_ref: nil} = state) do
     ref = Process.send_after(self(), :event_loop, state.scheduler_tick_rate_ms)
-    %State{state | event_loop_ref: ref}
+    %{state | event_loop_ref: ref}
   end
 
   defp schedule_event_loop(%State{event_loop_ref: ref} = state) when is_reference(ref) do
@@ -199,7 +226,7 @@ defmodule Stc.Scheduler do
     # already fired by the time we get here.
     Process.cancel_timer(ref)
     new_ref = Process.send_after(self(), :event_loop, state.scheduler_tick_rate_ms)
-    %State{state | event_loop_ref: new_ref}
+    %{state | event_loop_ref: new_ref}
   end
 
   # Pull all new events from the log since our cursor, then fold each into state.
@@ -207,7 +234,7 @@ defmodule Stc.Scheduler do
   defp fetch_and_modify_state(%State{event_cursor: cursor} = state) do
     {:ok, events, new_cursor} = Store.fetch(cursor, limit: 200)
 
-    new_state = %State{state | event_cursor: new_cursor}
+    new_state = %{state | event_cursor: new_cursor}
 
     events
     |> state.algorithm.schedule_event_order(new_state)
@@ -219,32 +246,30 @@ defmodule Stc.Scheduler do
   #
 
   @spec handle_event(struct(), State.t()) :: State.t()
+  defp handle_event(%Stc.Event.Ready{}, %State{draining: true} = state), do: state
+  defp handle_event(%Pending{}, %State{draining: true} = state), do: state
+
   defp handle_event(%Stc.Event.Ready{task_id: task_id} = event, %State{} = state) do
-    if task_id in state.stopped_task_ids or not Affinity.matches_scheduler?(event, state) do
-      state
-    else
-      do_schedule_ready(event, state)
-    end
+    if task_id in state.stopped_task_ids or not Affinity.matches_scheduler?(event, state),
+      do: state,
+      else: do_schedule_ready(event, state)
   end
 
   defp handle_event(%Pending{task_id: task_id} = pending, %State{} = state) do
-    if task_id in state.stopped_task_ids or not Affinity.matches_scheduler?(pending, state) do
-      state
-    else
-      do_schedule_ready(Pending.to_ready(pending), state)
-    end
+    if task_id in state.stopped_task_ids or not Affinity.matches_scheduler?(pending, state),
+      do: state,
+      else: do_schedule_ready(Pending.to_ready(pending), state)
   end
 
   defp handle_event(%Stc.Event.Stop{task_id: nil, workflow_id: wf_id}, %State{} = state) do
     task_ids = Map.get(state.workflow_tasks, wf_id, MapSet.new())
     Enum.each(task_ids, &send_cancel(&1, state))
-    new_stopped = Enum.reduce(task_ids, state.stopped_task_ids, &MapSet.put(&2, &1))
-    %State{state | stopped_task_ids: new_stopped}
+    %{state | stopped_task_ids: MapSet.union(state.stopped_task_ids, task_ids)}
   end
 
   defp handle_event(%Stc.Event.Stop{task_id: task_id}, %State{} = state) do
     send_cancel(task_id, state)
-    %State{state | stopped_task_ids: MapSet.put(state.stopped_task_ids, task_id)}
+    %{state | stopped_task_ids: MapSet.put(state.stopped_task_ids, task_id)}
   end
 
   defp handle_event(%Stc.Event.Preempted{task_id: task_id}, %State{} = state) do
@@ -332,8 +357,7 @@ defmodule Stc.Scheduler do
         {:ok, put_in(state.task_locks[task_id], lock)}
 
       {:ok, _other_lock} ->
-        # Re-entrant: same caller already holds it; treat as success.
-        {:ok, state}
+        raise "scheduler #{state.id} already holds lock for task #{task_id} — duplicate Ready event or missed cleanup"
 
       {:error, :locked} ->
         {:error, :locked}
@@ -425,11 +449,13 @@ defmodule Stc.Scheduler do
   # tell the executor to cancel
 
   @spec send_cancel(String.t(), State.t()) :: :ok
+  defp send_cancel(task_id, %State{task_to_executor_pid: active})
+       when not is_map_key(active, task_id),
+       do: :ok
+
   defp send_cancel(task_id, %State{task_to_executor_pid: active}) do
-    case Map.get(active, task_id) do
-      nil -> :ok
-      pid -> send(pid, :cancel)
-    end
+    send(active[task_id], :cancel)
+    :ok
   end
 
   @spec agent_is_free?(Stc.Agent.t(), State.t()) :: boolean()
@@ -449,4 +475,16 @@ defmodule Stc.Scheduler do
 
   @spec process_agent_buffer(State.t()) :: State.t()
   defp process_agent_buffer(%State{} = state), do: state.algorithm.process_agent_buffer(state)
+
+  @spec maybe_complete_drain(State.t()) :: State.t()
+  defp maybe_complete_drain(%State{draining: false} = state), do: state
+  defp maybe_complete_drain(%State{drain_callers: []} = state), do: state
+
+  defp maybe_complete_drain(%State{task_to_executor_pid: t2p} = state)
+       when map_size(t2p) == 0 do
+    Enum.each(state.drain_callers, &GenServer.reply(&1, :ok))
+    %{state | drain_callers: []}
+  end
+
+  defp maybe_complete_drain(%State{} = state), do: state
 end

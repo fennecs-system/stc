@@ -102,15 +102,29 @@ defmodule Stc.ReplyBuffer do
   def handle_call(
         {:register_executor, task_id, executor_pid},
         _from,
-        %State{executors: executors, buffer: buffer} = state
+        %State{executors: executors, buffer: buffer, monitors: monitors} = state
       ) do
+    # Demonitor any previous executor for this task (e.g. a previous retry).
+    monitors =
+      case Enum.find(monitors, fn {_ref, tid} -> tid == task_id end) do
+        {old_ref, _} ->
+          Process.demonitor(old_ref, [:flush])
+          Map.delete(monitors, old_ref)
+
+        nil ->
+          monitors
+      end
+
+    ref = Process.monitor(executor_pid)
+
     # Drop any messages buffered from a previous attempt so a retried executor
     # does not receive stale replies.
     {:reply, :ok,
      %State{
        state
        | executors: Map.put(executors, task_id, executor_pid),
-         buffer: Map.delete(buffer, task_id)
+         buffer: Map.delete(buffer, task_id),
+         monitors: Map.put(monitors, ref, task_id)
      }}
   end
 
@@ -118,13 +132,24 @@ defmodule Stc.ReplyBuffer do
   def handle_call(
         {:unregister_executor, task_id},
         _from,
-        %State{executors: executors, buffer: buffer} = state
+        %State{executors: executors, buffer: buffer, monitors: monitors} = state
       ) do
+    monitors =
+      case Enum.find(monitors, fn {_ref, tid} -> tid == task_id end) do
+        {ref, _} ->
+          Process.demonitor(ref, [:flush])
+          Map.delete(monitors, ref)
+
+        nil ->
+          monitors
+      end
+
     {:reply, :ok,
      %State{
        state
        | executors: Map.delete(executors, task_id),
-         buffer: Map.delete(buffer, task_id)
+         buffer: Map.delete(buffer, task_id),
+         monitors: monitors
      }}
   end
 
@@ -149,6 +174,23 @@ defmodule Stc.ReplyBuffer do
 
     new_buffer = Map.update(buffer, task_id, [entry], &[entry | &1])
 
-    {:reply, :ok, %State{state | buffer: new_buffer}}
+    {:reply, :ok, %{state | buffer: new_buffer}}
+  end
+
+  @impl true
+  def handle_info({:DOWN, ref, :process, _pid, _reason}, %State{monitors: monitors} = state) do
+    case Map.pop(monitors, ref) do
+      {nil, _} ->
+        {:noreply, state}
+
+      {task_id, monitors} ->
+        {:noreply,
+         %State{
+           state
+           | executors: Map.delete(state.executors, task_id),
+             buffer: Map.delete(state.buffer, task_id),
+             monitors: monitors
+         }}
+    end
   end
 end
