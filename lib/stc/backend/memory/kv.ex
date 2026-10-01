@@ -66,7 +66,7 @@ defmodule Stc.Backend.Memory.KV do
 
   @impl true
   def handle_call({:put, key, value}, _from, %State{store: store} = state) do
-    {:reply, :ok, %State{state | store: Map.put(store, key, value)}}
+    {:reply, :ok, %{state | store: Map.put(store, key, value)}}
   end
 
   @impl true
@@ -79,7 +79,7 @@ defmodule Stc.Backend.Memory.KV do
 
   @impl true
   def handle_call({:delete, key}, _from, %State{store: store} = state) do
-    {:reply, :ok, %State{state | store: Map.delete(store, key)}}
+    {:reply, :ok, %{state | store: Map.delete(store, key)}}
   end
 
   @impl true

@@ -147,6 +147,14 @@ defmodule Stc.Backend.Postgres.EventLog do
     :ok
   end
 
+  @impl Stc.Backend.EventLog
+  @spec count_by_type() :: %{String.t() => non_neg_integer()}
+  def count_by_type do
+    from(e in EventRecord, group_by: e.type, select: {e.type, count(e.id)})
+    |> repo().all()
+    |> Map.new()
+  end
+
   @spec apply_type_filter(Ecto.Query.t(), :all | [module()]) :: Ecto.Query.t()
   defp apply_type_filter(query, :all), do: query
 

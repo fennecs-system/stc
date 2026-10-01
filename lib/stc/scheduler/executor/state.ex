@@ -21,7 +21,9 @@ defmodule Stc.Scheduler.Executor.State do
           # Handle returned by the task module for async tasks; used by liveness checks.
           async_handle: term(),
           # Monotonic millisecond timestamps of recent liveness-check failures.
-          liveness_check_failures: [integer()]
+          liveness_check_failures: [integer()],
+          # Timer reference for retry backoff; cancelled on :cancel/:preempt.
+          retry_ref: reference() | nil
         }
 
   defstruct [
@@ -41,6 +43,7 @@ defmodule Stc.Scheduler.Executor.State do
     task_timeout_ref: nil,
     duration_timeout_ref: nil,
     continue_check_refs: [],
-    liveness_check_failures: []
+    liveness_check_failures: [],
+    retry_ref: nil
   ]
 end

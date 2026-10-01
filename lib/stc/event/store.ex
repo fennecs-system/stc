@@ -18,7 +18,7 @@ defmodule Stc.Event.Store do
   @doc "Appends an event to the log."
   @spec append(struct()) :: {:ok, Stc.Backend.EventLog.cursor()} | {:error, term()}
   def append(event) do
-    Logger.info("Appending event: #{inspect(event)}")
+    Logger.debug("Appending event: #{inspect(event)}")
     backend().append(event)
   end
 
@@ -42,6 +42,10 @@ defmodule Stc.Event.Store do
   @doc "Releases all locks held by `caller_id` (stale lock cleanup on boot)."
   @spec release_locks_by_caller(term()) :: :ok
   def release_locks_by_caller(caller_id), do: backend().release_locks_by_caller(caller_id)
+
+  @doc "Returns a map of event type name to count across the entire log."
+  @spec count_by_type() :: %{String.t() => non_neg_integer()}
+  def count_by_type, do: backend().count_by_type()
 
   # ---------------------------------------------------------------------------
   # Private helpers

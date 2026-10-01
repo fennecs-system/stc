@@ -73,7 +73,7 @@ defmodule Stc.Interpreter.Distributed do
     if new_cursor != cursor, do: save_cursor(new_cursor)
 
     schedule_poll()
-    {:noreply, %State{state | cursor: new_cursor}}
+    {:noreply, %{state | cursor: new_cursor}}
   end
 
   @impl true
@@ -269,11 +269,13 @@ defmodule Stc.Interpreter.Distributed do
          result,
          workflow_id
        ) do
-    {updated_programs, all_ready} =
+    {updated_programs, all_ready_rev} =
       Enum.map_reduce(programs, [], fn prog, acc ->
         {updated, ready} = next(prog, task_id, result, workflow_id)
-        {updated, acc ++ ready}
+        {updated, [ready | acc]}
       end)
+
+    all_ready = all_ready_rev |> Enum.reverse() |> List.flatten()
 
     if Enum.all?(updated_programs, &match?({:pure, _}, &1)) do
       results = Enum.map(updated_programs, fn {:pure, v} -> v end)

@@ -90,7 +90,7 @@ defmodule Stc.Scheduler.Executor do
         spawn_start(state, context)
 
       {:started, new_handle} ->
-        state = %State{state | async_handle: new_handle}
+        state = %{state | async_handle: new_handle}
         state = maybe_spawn_timeouts(state)
         state = spawn_liveness_checks(state)
         ReplyBuffer.register_executor(state.reply_buffer, state.task_id, self())
@@ -99,6 +99,9 @@ defmodule Stc.Scheduler.Executor do
 
       {:error, reason} ->
         handle_failure(state, reason, context)
+
+      other ->
+        handle_failure(state, {:bad_return, other}, context)
     end
   rescue
     err ->
@@ -125,7 +128,7 @@ defmodule Stc.Scheduler.Executor do
         {:stop, :normal, state}
 
       {:started, handle} ->
-        state = %State{state | async_handle: handle}
+        state = %{state | async_handle: handle}
         state = maybe_spawn_timeouts(state)
         state = spawn_liveness_checks(state)
         ReplyBuffer.register_executor(state.reply_buffer, state.task_id, self())
@@ -134,6 +137,9 @@ defmodule Stc.Scheduler.Executor do
 
       {:error, reason} ->
         handle_failure(state, reason, context)
+
+      other ->
+        handle_failure(state, {:bad_return, other}, context)
     end
   rescue
     err ->
@@ -278,12 +284,12 @@ defmodule Stc.Scheduler.Executor do
       case Task.running?(state.task_spec.module, state.task_spec, state.async_handle, context) do
         :ok ->
           # Clear any stale failures on a successful probe.
-          %State{state | liveness_check_failures: []}
+          %{state | liveness_check_failures: []}
 
         {:not_running, reason} ->
           Logger.warning("Task #{state.task_id} liveness check failed: #{inspect(reason)}")
           recent = Enum.filter(state.liveness_check_failures, &(now - &1 < window))
-          %State{state | liveness_check_failures: [now | recent]}
+          %{state | liveness_check_failures: [now | recent]}
       end
 
     if length(state.liveness_check_failures) >= max do
@@ -366,10 +372,19 @@ defmodule Stc.Scheduler.Executor do
   end
 
   @impl true
+  def handle_info(:retry, %State{} = state) do
+    {:noreply, %{state | retry_ref: nil}, {:continue, :start}}
+  end
+
+  @impl true
   def handle_info(_msg, %State{} = state), do: {:noreply, state}
 
   @impl true
-  def terminate(_reason, %State{}), do: :ok
+  def terminate(_reason, %State{reply_buffer: rb, task_id: task_id}) do
+    ReplyBuffer.unregister_executor(rb, task_id)
+  rescue
+    _ -> :ok
+  end
 
   @spec to_context(State.t()) :: Context.t()
   defp to_context(%State{} = state) do
@@ -425,7 +440,7 @@ defmodule Stc.Scheduler.Executor do
        when is_reference(ref) do
     # Discard return value — timer may have already fired.
     _ = Process.cancel_timer(ref)
-    %State{state | startup_timeout_ref: nil}
+    %{state | startup_timeout_ref: nil}
   end
 
   @spec cancel_continue_checks(State.t()) :: State.t()
@@ -433,7 +448,7 @@ defmodule Stc.Scheduler.Executor do
 
   defp cancel_continue_checks(%State{continue_check_refs: refs} = state) do
     Enum.each(refs, &Process.cancel_timer/1)
-    %State{state | continue_check_refs: []}
+    %{state | continue_check_refs: []}
   end
 
   @spec cancel_timers(State.t()) :: State.t()
@@ -441,6 +456,7 @@ defmodule Stc.Scheduler.Executor do
     _ = if state.startup_timeout_ref, do: Process.cancel_timer(state.startup_timeout_ref)
     _ = if state.task_timeout_ref, do: Process.cancel_timer(state.task_timeout_ref)
     _ = if state.duration_timeout_ref, do: Process.cancel_timer(state.duration_timeout_ref)
+    _ = if state.retry_ref, do: Process.cancel_timer(state.retry_ref)
     Enum.each(state.continue_check_refs, &Process.cancel_timer/1)
 
     %State{
@@ -448,6 +464,7 @@ defmodule Stc.Scheduler.Executor do
       | startup_timeout_ref: nil,
         task_timeout_ref: nil,
         duration_timeout_ref: nil,
+        retry_ref: nil,
         continue_check_refs: []
     }
   end
@@ -476,8 +493,8 @@ defmodule Stc.Scheduler.Executor do
     if retriable? do
       emit_failure(state, reason, true)
       backoff_ms = Retry.backoff_ms(state.task_spec.policies.retry, state.attempt)
-      Process.sleep(backoff_ms)
-      {:noreply, %State{state | attempt: state.attempt + 1}, {:continue, :start}}
+      ref = Process.send_after(self(), :retry, backoff_ms)
+      {:noreply, %{state | attempt: state.attempt + 1, retry_ref: ref}}
     else
       state = cancel_continue_checks(state)
       emit_failure(state, reason, false)
@@ -487,7 +504,8 @@ defmodule Stc.Scheduler.Executor do
 
   @spec do_cancel(State.t(), term()) :: {:stop, :normal, State.t()}
   defp do_cancel(%State{} = state, reason) do
-    state = cancel_continue_checks(state)
+    _ = if state.retry_ref, do: Process.cancel_timer(state.retry_ref)
+    state = cancel_continue_checks(%{state | retry_ref: nil})
     context = to_context(state)
 
     try do
@@ -507,6 +525,11 @@ defmodule Stc.Scheduler.Executor do
     emit_failure(state, reason, false)
     {:stop, :normal, state}
   end
+
+  # All emit_* functions exit/1 on append failure rather than returning an error.
+  # A failed append means the backend is down; crashing the executor ensures the
+  # lock is released via stale-lock cleanup on restart and the task gets rescheduled
+  # rather than silently hanging.
 
   @spec emit_preempted(State.t(), term()) :: :ok
   defp emit_preempted(%State{} = state, reason) do
@@ -540,7 +563,7 @@ defmodule Stc.Scheduler.Executor do
   defp emit_completion(%State{content_hash: hash} = state, result) when is_binary(hash) do
     # Write to store before emitting Completed so the cache is warm when the
     # walker emits the next task's Ready event.
-    TaskStore.put(hash, result)
+    TaskStore.put(hash, result, state.workflow_id)
     do_emit_completion(state, result)
   end
 
